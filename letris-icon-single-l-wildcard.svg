@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Letris wildcard L block">
+  <defs>
+    <style>
+      @font-face {
+        font-family: FredokaLetris;
+        src: url("fonts/FredokaOne-Regular.ttf") format("truetype");
+      }
+      .letter {
+        fill: #111111;
+        font-family: "Fredoka One", FredokaLetris, sans-serif;
+        font-size: 780px;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+    </style>
+    <linearGradient id="wildcard" x1="176" y1="176" x2="848" y2="848" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c9d6b8"/>
+      <stop offset="1" stop-color="#f2cc8f"/>
+    </linearGradient>
+    <filter id="shadow" x="-12%" y="-12%" width="124%" height="130%">
+      <feDropShadow dx="0" dy="72" stdDeviation="64" flood-color="#3d405b" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#wildcard)"/>
+  <text class="letter" x="512" y="548">L</text>
+</svg>

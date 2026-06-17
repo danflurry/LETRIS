@@ -6,7 +6,7 @@ const CELL_SIZE = 56;
 const CANVAS_WIDTH = GRID_WIDTH * CELL_SIZE;
 const CANVAS_HEIGHT = GRID_HEIGHT * CELL_SIZE;
 const STARTING_BLOCKS = 25;
-const SECONDS_UNTIL_NEW_BLOCKS = 30;
+const SECONDS_UNTIL_NEW_BLOCKS = 60;
 const GRAVITY_ROWS = 58;
 const TERMINAL_VELOCITY_ROWS = 26;
 const COLLISION_RESTITUTION = 0.34;
@@ -189,11 +189,11 @@ function resetRun() {
   game.level = 1;
   game.score = 0;
   game.highestLevel = 1;
-  game.startingBlocks = Number(state.settings.startingBlocks || STARTING_BLOCKS);
-  game.secondsPerMove = Number(state.settings.secondsPerMove || SECONDS_UNTIL_NEW_BLOCKS);
+  game.startingBlocks = STARTING_BLOCKS;
+  game.secondsPerMove = secondsForLevel(game.level);
   game.timeLeft = game.secondsPerMove;
   game.initialTimerDelay = 2;
-  game.levelThreshold = 3;
+  game.levelThreshold = levelThresholdFor(game.level);
   game.blocksRemoved = 0;
   game.validBlocksCleared = 0;
   game.specialBlockTimer = randomRange(10, 25);
@@ -486,6 +486,14 @@ function checkLevelCompletion(dt) {
   if (game.levelCompleteTimer <= 0) showLevelComplete();
 }
 
+function levelThresholdFor(level) {
+  return Math.max(1, 3 - Math.floor(level / 10));
+}
+
+function secondsForLevel(level) {
+  return Math.max(5, SECONDS_UNTIL_NEW_BLOCKS - Math.floor(level / 10) * 5);
+}
+
 function pointerDown(event) {
   event.preventDefault();
   if (game.paused || game.gameOver) return;
@@ -751,10 +759,10 @@ function advanceLevel() {
   game.level += 1;
   game.highestLevel = Math.max(game.highestLevel, game.level);
   game.startingBlocks = Math.min(game.startingBlocks + 1, GRID_WIDTH * GRID_HEIGHT - 1);
-  game.secondsPerMove = game.level <= 5 ? SECONDS_UNTIL_NEW_BLOCKS : Math.max(5, SECONDS_UNTIL_NEW_BLOCKS * (1 - Math.min(5 * Math.floor((game.level - 1) / 5), 95) / 100));
+  game.secondsPerMove = secondsForLevel(game.level);
   game.timeLeft = game.secondsPerMove;
   game.initialTimerDelay = 2;
-  game.levelThreshold = Math.max(0, 3 - Math.floor(game.level / 10));
+  game.levelThreshold = levelThresholdFor(game.level);
   game.wordsFoundThisLevel = [];
   game.levelCompleteTimer = null;
   game.paused = false;
@@ -1059,16 +1067,57 @@ function addFloater(text, pos, color) {
 
 function showHowTo() {
   showModal("How To Play", `
-    <h3>Basic Gameplay</h3>
-    <p>Drag through neighboring blocks to make words. Release to submit. Valid words need at least three letters.</p>
-    <h3>Levels</h3>
-    <p>Clear all blocks from above the shaded area. The safe area shrinks every 10 levels, and each level starts with one more block.</p>
-    <h3>Timer and Penalties</h3>
-    <p>When the timer runs out, new blocks appear. Space forces the timer. Invalid words remove your selected blocks, then add penalty blocks.</p>
-    <h3>Scoring</h3>
-    <p>Rare letters are worth more. Longer words and later levels multiply points. Double and triple blocks expire quickly.</p>
-    <h3>Wild Cards</h3>
-    <p>Every 20 valid blocks removed turns a random block into a wild card.</p>
+    <div class="howto-grid">
+      <section class="howto-step">
+        <div class="mini-board word-demo" aria-hidden="true">
+          <span class="mini-block gold" style="--x:0;--y:2">C</span>
+          <span class="mini-block peach" style="--x:1;--y:1">A</span>
+          <span class="mini-block sage" style="--x:2;--y:2">T</span>
+          <span class="mini-path"></span>
+        </div>
+        <div>
+          <h3>Make Words</h3>
+          <p>Drag through neighboring blocks, then release. Valid words need at least three letters.</p>
+        </div>
+      </section>
+      <section class="howto-step">
+        <div class="mini-board clear-demo" aria-hidden="true">
+          <span class="mini-safe"></span>
+          <span class="mini-block gold" style="--x:0;--y:1">S</span>
+          <span class="mini-block peach" style="--x:1;--y:2">A</span>
+          <span class="mini-block sage" style="--x:2;--y:3">F</span>
+          <span class="mini-block coral" style="--x:3;--y:3">E</span>
+        </div>
+        <div>
+          <h3>Clear Levels</h3>
+          <p>Remove blocks until everything left is inside the shaded win area.</p>
+        </div>
+      </section>
+      <section class="howto-step">
+        <div class="mini-board timer-demo" aria-hidden="true">
+          <span class="mini-timer"></span>
+          <span class="mini-block gold" style="--x:0;--y:3">N</span>
+          <span class="mini-block peach" style="--x:1;--y:3">E</span>
+          <span class="mini-block sage" style="--x:2;--y:3">W</span>
+        </div>
+        <div>
+          <h3>Beat The Timer</h3>
+          <p>When time runs out, five new blocks fall in. The timer drops by five seconds every ten levels.</p>
+        </div>
+      </section>
+      <section class="howto-step">
+        <div class="mini-board wildcard-demo" aria-hidden="true">
+          <span class="mini-block gold" style="--x:0;--y:2">P</span>
+          <span class="mini-block wildcard" style="--x:1;--y:2">L</span>
+          <span class="mini-block sage" style="--x:2;--y:2">Y</span>
+          <span class="mini-spark">20</span>
+        </div>
+        <div>
+          <h3>Wild Cards</h3>
+          <p>Every 20 valid blocks cleared turns a random block into a wild card.</p>
+        </div>
+      </section>
+    </div>
   `);
 }
 
@@ -1091,15 +1140,11 @@ function showScores() {
 function showSettings() {
   showModal("Settings", `
     <div class="settings-grid">
-      <label>Starting Blocks <input id="settingStartingBlocks" type="range" min="10" max="55" value="${Number(state.settings.startingBlocks || STARTING_BLOCKS)}"></label>
-      <label>Seconds Per Move <input id="settingSeconds" type="range" min="15" max="60" value="${Number(state.settings.secondsPerMove || SECONDS_UNTIL_NEW_BLOCKS)}"></label>
       <label><input id="settingMusic" type="checkbox" ${state.settings.musicEnabled === false ? "" : "checked"}> Music</label>
-      <label><input id="settingSound" type="checkbox" ${state.settings.soundEnabled === false ? "" : "checked"}> Sound</label>
+      <label><input id="settingSound" type="checkbox" ${state.settings.soundEnabled === false ? "" : "checked"}> Sounds</label>
     </div>
   `, [
     ["Save", () => {
-      state.settings.startingBlocks = Number($("settingStartingBlocks").value);
-      state.settings.secondsPerMove = Number($("settingSeconds").value);
       state.settings.musicEnabled = $("settingMusic").checked;
       state.settings.soundEnabled = $("settingSound").checked;
       saveState();
