@@ -606,9 +606,10 @@ function acceptWord(displayWord, resolvedWord) {
   game.score += totalPoints;
   recordPlayerScore(resolvedWord, basePoints, totalPoints);
   const scoreOrigin = centerOfSelection();
+  addFloater(resolvedWord, { x: scoreOrigin.x, y: scoreOrigin.y - 30 }, WILD_CARD_BLOCK_COLOR);
   addFloater(`+${totalPoints}`, scoreOrigin, PALETTE[5]);
   if (specialMultiplier > 1) {
-    addFloater(`${specialMultiplier}X`, { x: scoreOrigin.x, y: scoreOrigin.y - 26 }, PALETTE[4]);
+    addFloater(`${specialMultiplier}X`, { x: scoreOrigin.x, y: scoreOrigin.y - 58 }, PALETTE[4]);
   }
 
   for (const block of game.selected) removeBlock(block);
@@ -624,7 +625,6 @@ function acceptWord(displayWord, resolvedWord) {
   }
   if (displayWord !== resolvedWord) {
     game.word = resolvedWord;
-    addFloater(resolvedWord, centerOfSelection(), WILD_CARD_BLOCK_COLOR);
   }
 }
 
@@ -844,8 +844,7 @@ function drawGridLines() {
 function drawThreshold() {
   if (game.levelThreshold <= 0) return;
   const y = (GRID_HEIGHT - game.levelThreshold) * CELL_SIZE;
-  ctx.fillStyle = "rgba(106,140,175,0.38)";
-  ctx.fillRect(0, y, CANVAS_WIDTH, game.levelThreshold * CELL_SIZE);
+  roundRect(0, y, CANVAS_WIDTH, game.levelThreshold * CELL_SIZE, 14, "rgba(106,140,175,0.38)");
 }
 
 function drawBlock(block) {
