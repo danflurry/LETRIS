@@ -43,6 +43,11 @@ const VOWELS = new Set(["A", "E", "I", "O", "U"]);
 
 const $ = (id) => document.getElementById(id);
 const state = loadState();
+const homeTitle = {
+  blocks: [],
+  ready: false
+};
+let howToSim = null;
 const game = {
   grid: [],
   blocks: [],
@@ -96,6 +101,7 @@ init();
 async function init() {
   syncViewportHeight();
   bindUi();
+  setupHomeTitlePhysics();
   drawLoading();
   await loadWordBank();
   game.loading = false;
@@ -261,9 +267,86 @@ function removeBlock(block) {
 function loop(now) {
   const dt = Math.min((now - (game.lastFrame || now)) / 1000, 0.05);
   game.lastFrame = now;
+  updateHomeTitlePhysics(dt);
+  updateHowToSimulator(dt);
   if (!$("gameScreen").classList.contains("hidden") && !game.paused && !game.loading) update(dt);
   draw();
   requestAnimationFrame(loop);
+}
+
+function setupHomeTitlePhysics() {
+  const spans = [...document.querySelectorAll(".brand-title span")];
+  homeTitle.blocks = spans.map((element, index) => ({
+    element,
+    drawY: -randomRange(1.8, 3.4) - index * 0.22,
+    y: 0,
+    velocity: 0,
+    squash: 0,
+    rotation: randomRange(-0.11, 0.11),
+    angularVelocity: randomRange(-0.03, 0.03),
+    grounded: false,
+    fallDelay: index * 0.085
+  }));
+  homeTitle.ready = true;
+  updateHomeTitlePhysics(0);
+}
+
+function updateHomeTitlePhysics(dt) {
+  if (!homeTitle.ready || document.body.classList.contains("playing")) return;
+  for (const block of homeTitle.blocks) {
+    const tileHeight = block.element.getBoundingClientRect().height || 64;
+    if (block.fallDelay > 0) {
+      block.fallDelay -= dt;
+    } else {
+      updateLooseBlockPhysics(block, dt);
+    }
+    const squash = Math.max(0, Math.min(1, block.squash || 0));
+    const scaleX = 1 + squash * 0.09;
+    const scaleY = 1 - squash * 0.12;
+    block.element.style.transform = `translateY(${block.drawY * tileHeight}px) rotate(${block.rotation}rad) scale(${scaleX}, ${scaleY})`;
+  }
+}
+
+function updateLooseBlockPhysics(block, dt) {
+  const targetY = block.y;
+  const airborne = block.drawY < targetY - SETTLE_DISTANCE_ROWS || block.velocity > SETTLE_SPEED_ROWS;
+
+  if (airborne) {
+    block.grounded = false;
+    block.velocity = Math.min((block.velocity + GRAVITY_ROWS * dt) * AIR_DRAG, TERMINAL_VELOCITY_ROWS);
+    block.drawY += block.velocity * dt;
+  } else if (!block.grounded) {
+    block.velocity += GRAVITY_ROWS * dt;
+    block.drawY += block.velocity * dt;
+  }
+
+  if (block.drawY >= targetY) {
+    const impactSpeed = Math.max(0, block.velocity);
+    block.drawY = targetY;
+
+    if (impactSpeed > SETTLE_SPEED_ROWS) {
+      block.velocity = -impactSpeed * COLLISION_RESTITUTION;
+      block.squash = Math.min(1, block.squash + impactSpeed / TERMINAL_VELOCITY_ROWS);
+      block.angularVelocity += (Math.random() - 0.5) * Math.min(0.12, impactSpeed * 0.006);
+    } else {
+      block.velocity = 0;
+      block.grounded = true;
+      block.rotation *= 0.65;
+      block.angularVelocity *= 0.5;
+    }
+  }
+
+  if (block.drawY > targetY) block.drawY = targetY;
+  block.squash = Math.max(0, block.squash - SQUASH_RECOVERY * dt);
+  block.angularVelocity *= Math.pow(ROTATION_DAMPING, dt * 60);
+  block.rotation += block.angularVelocity;
+  block.rotation *= Math.pow(0.985, dt * 60);
+
+  if (Math.abs(block.velocity) < 0.04 && Math.abs(block.drawY - targetY) < SETTLE_DISTANCE_ROWS) {
+    block.drawY = targetY;
+    block.velocity = 0;
+    block.grounded = true;
+  }
 }
 
 function update(dt) {
@@ -1065,60 +1148,308 @@ function addFloater(text, pos, color) {
   });
 }
 
+const HOW_TO_LESSONS = [
+  {
+    id: "words",
+    label: "Words",
+    title: "Make Words",
+    copy: "Drag through neighboring blocks. The selected path behaves like the real board: linked blocks highlight, then valid words clear.",
+    duration: 4.6
+  },
+  {
+    id: "levels",
+    label: "Levels",
+    title: "Clear The Win Area",
+    copy: "A level ends when every remaining block has fallen into the shaded area at the bottom of the grid.",
+    duration: 4.8
+  },
+  {
+    id: "timer",
+    label: "Timer",
+    title: "Beat The Timer",
+    copy: "When the timer empties, five new blocks fall in. Every ten levels, that timer gets five seconds shorter.",
+    duration: 5.2
+  },
+  {
+    id: "wild",
+    label: "Wild",
+    title: "Wild Cards",
+    copy: "Every 20 valid blocks cleared flips a random block into a wildcard that can stand in for another letter.",
+    duration: 4.8
+  }
+];
+
 function showHowTo() {
   showModal("How To Play", `
-    <div class="howto-grid">
-      <section class="howto-step">
-        <div class="mini-board word-demo" aria-hidden="true">
-          <span class="mini-block gold" style="--x:0;--y:2">C</span>
-          <span class="mini-block peach" style="--x:1;--y:1">A</span>
-          <span class="mini-block sage" style="--x:2;--y:2">T</span>
-          <span class="mini-path"></span>
-        </div>
-        <div>
-          <h3>Make Words</h3>
-          <p>Drag through neighboring blocks, then release. Valid words need at least three letters.</p>
-        </div>
-      </section>
-      <section class="howto-step">
-        <div class="mini-board clear-demo" aria-hidden="true">
-          <span class="mini-safe"></span>
-          <span class="mini-block gold" style="--x:0;--y:1">S</span>
-          <span class="mini-block peach" style="--x:1;--y:2">A</span>
-          <span class="mini-block sage" style="--x:2;--y:3">F</span>
-          <span class="mini-block coral" style="--x:3;--y:3">E</span>
-        </div>
-        <div>
-          <h3>Clear Levels</h3>
-          <p>Remove blocks until everything left is inside the shaded win area.</p>
-        </div>
-      </section>
-      <section class="howto-step">
-        <div class="mini-board timer-demo" aria-hidden="true">
-          <span class="mini-timer"></span>
-          <span class="mini-block gold" style="--x:0;--y:3">N</span>
-          <span class="mini-block peach" style="--x:1;--y:3">E</span>
-          <span class="mini-block sage" style="--x:2;--y:3">W</span>
-        </div>
-        <div>
-          <h3>Beat The Timer</h3>
-          <p>When time runs out, five new blocks fall in. The timer drops by five seconds every ten levels.</p>
-        </div>
-      </section>
-      <section class="howto-step">
-        <div class="mini-board wildcard-demo" aria-hidden="true">
-          <span class="mini-block gold" style="--x:0;--y:2">P</span>
-          <span class="mini-block wildcard" style="--x:1;--y:2">L</span>
-          <span class="mini-block sage" style="--x:2;--y:2">Y</span>
-          <span class="mini-spark">20</span>
-        </div>
-        <div>
-          <h3>Wild Cards</h3>
-          <p>Every 20 valid blocks cleared turns a random block into a wild card.</p>
-        </div>
-      </section>
+    <div class="howto-simulator">
+      <canvas id="howToCanvas" class="howto-stage" width="280" height="448" aria-label="Gameplay lesson animation"></canvas>
+      <div class="howto-copy">
+        <h3 id="howToLessonTitle"></h3>
+        <p id="howToLessonCopy"></p>
+      </div>
+      <div class="howto-tabs">
+        ${HOW_TO_LESSONS.map((lesson, index) => `<button class="howto-tab" type="button" data-lesson="${index}">${lesson.label}</button>`).join("")}
+      </div>
     </div>
   `);
+  initHowToSimulator();
+}
+
+function initHowToSimulator() {
+  const canvasEl = $("howToCanvas");
+  if (!canvasEl) return;
+  howToSim = {
+    canvas: canvasEl,
+    ctx: canvasEl.getContext("2d"),
+    lessonIndex: 0,
+    elapsed: 0,
+    blocks: []
+  };
+  for (const button of document.querySelectorAll(".howto-tab")) {
+    button.addEventListener("click", () => setHowToLesson(Number(button.dataset.lesson || 0)));
+  }
+  setHowToLesson(0);
+}
+
+function setHowToLesson(index) {
+  if (!howToSim) return;
+  howToSim.lessonIndex = Math.max(0, Math.min(HOW_TO_LESSONS.length - 1, index));
+  howToSim.elapsed = 0;
+  howToSim.blocks = makeHowToBlocks(HOW_TO_LESSONS[howToSim.lessonIndex].id);
+  const lesson = HOW_TO_LESSONS[howToSim.lessonIndex];
+  $("howToLessonTitle").textContent = lesson.title;
+  $("howToLessonCopy").textContent = lesson.copy;
+  for (const button of document.querySelectorAll(".howto-tab")) {
+    button.classList.toggle("active", Number(button.dataset.lesson || 0) === howToSim.lessonIndex);
+  }
+  drawHowToSimulator();
+}
+
+function makeHowToBlocks(id) {
+  const specs = {
+    words: [
+      ["C", 1, 4, PALETTE[1]], ["A", 2, 3, PALETTE[2]], ["T", 3, 4, PALETTE[3]],
+      ["R", 0, 6, PALETTE[1]], ["E", 1, 6, PALETTE[2]], ["S", 2, 6, PALETTE[3]], ["T", 3, 6, PALETTE[4]]
+    ],
+    levels: [
+      ["S", 0, 2, PALETTE[1]], ["A", 1, 3, PALETTE[2]], ["F", 2, 5, PALETTE[3]], ["E", 3, 5, PALETTE[4]], ["N", 4, 6, PALETTE[1]]
+    ],
+    timer: [
+      ["T", 0, 7, PALETTE[1]], ["I", 1, 7, PALETTE[2]], ["M", 2, 7, PALETTE[3]], ["E", 3, 7, PALETTE[1]]
+    ],
+    wild: [
+      ["P", 1, 5, PALETTE[1]], ["L", 2, 5, PALETTE[2]], ["Y", 3, 5, PALETTE[3]], ["S", 2, 6, PALETTE[1]]
+    ]
+  }[id];
+  return specs.map(([letter, x, y, color], index) => ({
+    letter,
+    x,
+    y,
+    drawY: -randomRange(1.5, 5.5) - index * 0.25,
+    velocity: 0,
+    color,
+    selected: false,
+    flash: 0,
+    squash: 0,
+    rotation: randomRange(-0.08, 0.08),
+    angularVelocity: randomRange(-0.02, 0.02),
+    grounded: false,
+    fallDelay: index * 0.05
+  }));
+}
+
+function updateHowToSimulator(dt) {
+  if (!howToSim || !modal.open || !$("howToCanvas")) return;
+  const lesson = HOW_TO_LESSONS[howToSim.lessonIndex];
+  howToSim.elapsed += dt;
+  if (howToSim.elapsed > lesson.duration) {
+    howToSim.elapsed = 0;
+    howToSim.blocks = makeHowToBlocks(lesson.id);
+  }
+  for (const block of howToSim.blocks) {
+    if (block.fallDelay > 0) block.fallDelay -= dt;
+    else updateLooseBlockPhysics(block, dt);
+    if (block.flash > 0) block.flash = Math.max(0, block.flash - dt);
+  }
+  updateHowToLessonState(lesson.id, howToSim.elapsed);
+  drawHowToSimulator();
+}
+
+function updateHowToLessonState(id, elapsed) {
+  const blocks = howToSim.blocks;
+  for (const block of blocks) block.selected = false;
+  if (id === "words") {
+    const selectedCount = elapsed < 1.2 ? 0 : elapsed < 1.75 ? 1 : elapsed < 2.3 ? 2 : elapsed < 3.15 ? 3 : 0;
+    blocks.slice(0, selectedCount).forEach((block) => block.selected = true);
+    if (elapsed > 3.15) blocks.slice(0, 3).forEach((block) => {
+      block.flash = 0.25;
+      block.drawY = Math.min(block.drawY + 0.18, block.y + 0.4);
+    });
+  }
+  if (id === "levels" && elapsed > 2.15) {
+    blocks[0].drawY = Math.min(blocks[0].drawY + 0.18, 5);
+    blocks[1].drawY = Math.min(blocks[1].drawY + 0.14, 5);
+  }
+  if (id === "timer" && elapsed > 2.4 && blocks.length < 9) {
+    const letters = ["N", "E", "W", "S", "T"];
+    for (let i = 0; i < 5; i += 1) {
+      blocks.push({
+        letter: letters[i],
+        x: i,
+        y: 5 + (i % 2),
+        drawY: -randomRange(1.5, 4),
+        velocity: 0,
+        color: TIMER_BLOCK_COLOR,
+        selected: false,
+        flash: 0,
+        squash: 0,
+        rotation: randomRange(-0.08, 0.08),
+        angularVelocity: randomRange(-0.02, 0.02),
+        grounded: false,
+        fallDelay: i * 0.08
+      });
+    }
+  }
+  if (id === "wild" && elapsed > 2.2) {
+    blocks[1].letter = STAR;
+    blocks[1].color = WILD_CARD_BLOCK_COLOR;
+    blocks[1].flash = Math.max(blocks[1].flash, 0.2);
+  }
+}
+
+function drawHowToSimulator() {
+  if (!howToSim) return;
+  const simCtx = howToSim.ctx;
+  const canvasEl = howToSim.canvas;
+  const lesson = HOW_TO_LESSONS[howToSim.lessonIndex];
+  simCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  simCtx.fillStyle = PALETTE[2];
+  simCtx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+  drawHowToThreshold(simCtx, lesson.id);
+  drawHowToTimer(simCtx, lesson.id, howToSim.elapsed);
+  drawHowToSelection(simCtx, lesson.id, howToSim.elapsed);
+  for (const block of [...howToSim.blocks].sort((a, b) => a.drawY - b.drawY)) drawHowToBlock(simCtx, block);
+  drawHowToLabel(simCtx, lesson.id, howToSim.elapsed);
+}
+
+function drawHowToThreshold(simCtx, id) {
+  if (id !== "levels") return;
+  simCtx.fillStyle = "rgba(106,140,175,0.38)";
+  simCtx.beginPath();
+  simCtx.roundRect(0, 5 * CELL_SIZE, 5 * CELL_SIZE, 3 * CELL_SIZE, 14);
+  simCtx.fill();
+}
+
+function drawHowToTimer(simCtx, id, elapsed) {
+  if (id !== "timer") return;
+  const progress = Math.min(1, elapsed / 2.35);
+  const x = 218;
+  const y = 10;
+  const size = 48;
+  const remainingColor = progress > 0.75 ? PALETTE[4] : PALETTE[3];
+  simCtx.save();
+  simCtx.beginPath();
+  simCtx.roundRect(x, y, size, size, 8);
+  simCtx.clip();
+  simCtx.fillStyle = PALETTE[1];
+  simCtx.fillRect(x, y, size, size);
+  simCtx.beginPath();
+  simCtx.moveTo(x + size / 2, y + size / 2);
+  simCtx.arc(x + size / 2, y + size / 2, size, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+  simCtx.closePath();
+  simCtx.fillStyle = remainingColor;
+  simCtx.fill();
+  simCtx.restore();
+  simCtx.strokeStyle = PALETTE[0];
+  simCtx.lineWidth = 4;
+  simCtx.beginPath();
+  simCtx.roundRect(x, y, size, size, 8);
+  simCtx.stroke();
+}
+
+function drawHowToSelection(simCtx, id, elapsed) {
+  if (id !== "words" || elapsed < 1.2 || elapsed > 3.15) return;
+  const selected = howToSim.blocks.filter((block) => block.selected);
+  if (selected.length < 2) return;
+  simCtx.save();
+  simCtx.strokeStyle = "rgba(61,64,91,0.38)";
+  simCtx.lineWidth = 8;
+  simCtx.lineCap = "round";
+  simCtx.lineJoin = "round";
+  simCtx.beginPath();
+  selected.forEach((block, index) => {
+    const x = (block.x + 0.5) * CELL_SIZE;
+    const y = (block.drawY + 0.5) * CELL_SIZE;
+    if (index === 0) simCtx.moveTo(x, y);
+    else simCtx.lineTo(x, y);
+  });
+  simCtx.stroke();
+  simCtx.restore();
+}
+
+function drawHowToBlock(simCtx, block) {
+  const squash = Math.max(0, Math.min(1, block.squash || 0));
+  const x = block.x * CELL_SIZE + 4 - squash * 4.5;
+  const y = block.drawY * CELL_SIZE + 4 + squash * 7;
+  const size = CELL_SIZE - 8;
+  const visualWidth = size + squash * 9;
+  const visualHeight = Math.max(size * 0.78, size - squash * 9.45);
+  const centerX = x + visualWidth / 2;
+  const centerY = y + visualHeight / 2;
+  const fill = block.letter === STAR ? howToGradient(simCtx, x, y, visualWidth, WILD_CARD_GRADIENT) : block.color;
+
+  simCtx.save();
+  simCtx.translate(centerX, centerY);
+  simCtx.rotate(Math.max(-0.11, Math.min(0.11, block.rotation || 0)));
+  simCtx.translate(-centerX, -centerY);
+  simCtx.shadowColor = "rgba(61,64,91,0.25)";
+  simCtx.shadowBlur = 8 + squash * 5;
+  simCtx.shadowOffsetY = 4 + squash * 2;
+  simCtx.beginPath();
+  simCtx.roundRect(x, y, visualWidth, visualHeight, 8);
+  simCtx.fillStyle = fill;
+  simCtx.fill();
+  simCtx.shadowColor = "transparent";
+  if (block.selected) {
+    simCtx.lineWidth = 5;
+    simCtx.strokeStyle = PALETTE[5];
+    simCtx.beginPath();
+    simCtx.roundRect(x + 2, y + 2, visualWidth - 4, visualHeight - 4, 8);
+    simCtx.stroke();
+  }
+  if (block.flash > 0) {
+    simCtx.globalAlpha = Math.min(0.45, block.flash);
+    simCtx.fillStyle = "#ffffff";
+    simCtx.beginPath();
+    simCtx.roundRect(x, y, visualWidth, visualHeight, 8);
+    simCtx.fill();
+    simCtx.globalAlpha = 1;
+  }
+  simCtx.fillStyle = block.color === TIMER_BLOCK_COLOR ? PALETTE[0] : "#111111";
+  simCtx.font = block.letter === STAR ? "34px FredokaLetris, sans-serif" : "30px FredokaLetris, sans-serif";
+  simCtx.textAlign = "center";
+  simCtx.textBaseline = "middle";
+  simCtx.fillText(block.letter === STAR ? "★" : block.letter, centerX, centerY + 1);
+  simCtx.restore();
+}
+
+function howToGradient(simCtx, x, y, size, colors) {
+  const gradient = simCtx.createLinearGradient(x, y, x + size, y + size);
+  gradient.addColorStop(0, colors[0]);
+  gradient.addColorStop(1, colors[1]);
+  return gradient;
+}
+
+function drawHowToLabel(simCtx, id, elapsed) {
+  simCtx.save();
+  simCtx.font = "24px FredokaLetris, sans-serif";
+  simCtx.textAlign = "center";
+  simCtx.textBaseline = "middle";
+  simCtx.fillStyle = PALETTE[5];
+  if (id === "words" && elapsed > 3.1) simCtx.fillText("CAT", 140, 86);
+  if (id === "wild") simCtx.fillText(elapsed > 2.2 ? "Wildcard!" : "20 blocks", 140, 90);
+  if (id === "levels" && elapsed > 3.4) simCtx.fillText("Level Clear", 140, 90);
+  simCtx.restore();
 }
 
 function showScores() {
@@ -1176,6 +1507,7 @@ function showModal(title, body, actions = []) {
 }
 
 function closeModal() {
+  howToSim = null;
   modal.close();
 }
 
