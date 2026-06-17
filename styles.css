@@ -211,7 +211,7 @@ button {
 
 .game-screen {
   --hud-height: 38px;
-  --board-width: min(calc(100vw - 10px - var(--safe-left) - var(--safe-right)), calc((var(--app-height) - var(--hud-height) - 14px - var(--safe-top) - var(--safe-bottom)) / 3));
+  --board-width: calc(100vw - 10px - var(--safe-left) - var(--safe-right));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   justify-items: center;
@@ -309,6 +309,7 @@ button {
   grid-row: 2;
   width: var(--board-width);
   height: auto;
+  align-self: end;
   aspect-ratio: 280 / 840;
   touch-action: none;
   user-select: none;
@@ -584,7 +585,7 @@ button {
 @media (max-height: 690px) {
   .game-screen {
     --hud-height: 34px;
-    --board-width: min(calc(100vw - 8px - var(--safe-left) - var(--safe-right)), calc((var(--app-height) - var(--hud-height) - 12px - var(--safe-top) - var(--safe-bottom)) / 3));
+    --board-width: calc(100vw - 8px - var(--safe-left) - var(--safe-right));
     gap: 4px;
   }
 
