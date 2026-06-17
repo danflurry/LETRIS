@@ -69,6 +69,9 @@ const game = {
   wordStatus: "",
   wordCelebrationUntil: 0,
   selecting: false,
+  tapSelecting: false,
+  pointerStart: null,
+  pointerMoved: false,
   paused: false,
   gameOver: false,
   levelCompleteTimer: null,
@@ -133,6 +136,7 @@ function bindUi() {
   $("scoresButton").addEventListener("click", showScores);
   $("homeButton").addEventListener("click", confirmQuit);
   $("pauseButton").addEventListener("click", togglePause);
+  $("timerBox").addEventListener("click", expireTimerNow);
   modalClose.addEventListener("click", closeModal);
   canvas.addEventListener("pointerdown", pointerDown);
   canvas.addEventListener("pointermove", pointerMove);
@@ -391,15 +395,20 @@ function updateTimer(dt) {
     return;
   }
   game.timeLeft -= dt;
-  if (game.timeLeft <= 0) {
-    addNewBlocks(5, "timer");
-    game.timeLeft = game.secondsPerMove;
-  }
+  if (game.timeLeft <= 0) expireTimerNow();
 }
 
 function resetMoveTimer(delay = 0) {
   game.timeLeft = game.secondsPerMove;
   game.initialTimerDelay = delay;
+  updateHud();
+}
+
+function expireTimerNow() {
+  if ($("gameScreen").classList.contains("hidden") || game.paused || game.gameOver || game.loading) return;
+  game.initialTimerDelay = 0;
+  addNewBlocks(5, "timer");
+  game.timeLeft = game.secondsPerMove;
   updateHud();
 }
 
@@ -549,8 +558,11 @@ function addNewBlocks(count, source = "timer") {
   const isPenalty = source === true || source === "penalty";
   const color = isPenalty ? WRONG_WORD_COLOR : source === "timer" ? TIMER_BLOCK_COLOR : null;
   for (let i = 0; i < count; i += 1) {
-    const columns = shuffle([...Array(GRID_WIDTH).keys()]).sort((a, b) => columnHeight(a) - columnHeight(b));
-    const x = columns[0];
+    const x = shortestOpenColumn();
+    if (x === -1) {
+      endGame();
+      return;
+    }
     const row = firstEmptyRow(x);
     if (row === -1) {
       endGame();
@@ -562,6 +574,13 @@ function addNewBlocks(count, source = "timer") {
     addBlock(block);
   }
   if (checkGameOver()) endGame();
+}
+
+function shortestOpenColumn() {
+  const openColumns = [...Array(GRID_WIDTH).keys()].filter((x) => firstEmptyRow(x) !== -1);
+  if (!openColumns.length) return -1;
+  const minHeight = Math.min(...openColumns.map(columnHeight));
+  return randomChoice(openColumns.filter((x) => columnHeight(x) === minHeight));
 }
 
 function firstEmptyRow(x) {
@@ -607,10 +626,18 @@ function pointerDown(event) {
   game.definition = "";
   game.wordStatus = "";
   game.wordCelebrationUntil = 0;
-  if (!block) return;
-  clearSelection();
-  block.selected = true;
-  game.selected.push(block);
+  game.pointerStart = pos;
+  game.pointerMoved = false;
+  if (!block) {
+    if (game.tapSelecting) finishTapSelection();
+    return;
+  }
+  if (game.tapSelecting && block === game.selected.at(-1) && game.selected.length >= 3) {
+    finishTapSelection();
+    return;
+  }
+  if (!game.tapSelecting) clearSelection();
+  addBlockToSelection(block);
   game.selecting = true;
   updateCurrentWord();
 }
@@ -619,6 +646,10 @@ function pointerMove(event) {
   event.preventDefault();
   if (!game.selecting || game.paused || game.gameOver) return;
   const pos = pointerPosition(event);
+  if (game.pointerStart && Math.hypot(pos.x - game.pointerStart.x, pos.y - game.pointerStart.y) > CELL_SIZE * 0.18) {
+    game.pointerMoved = true;
+    game.tapSelecting = false;
+  }
   const candidate = getBlockAt(pos.x, pos.y);
   if (!candidate) return;
   const last = game.selected.at(-1);
@@ -631,8 +662,7 @@ function pointerMove(event) {
   if (existingIndex >= 0) {
     while (game.selected.length > existingIndex + 1) game.selected.pop().selected = false;
   } else if (isNeighbor(last, candidate)) {
-    candidate.selected = true;
-    game.selected.push(candidate);
+    addBlockToSelection(candidate);
   }
   updateCurrentWord();
 }
@@ -647,8 +677,37 @@ function pointerUp(event) {
     }
   }
   if (!game.selecting) return;
+  const wasTapSelecting = game.tapSelecting;
   game.selecting = false;
-  submitSelection();
+  if (wasTapSelecting && !game.pointerMoved) {
+    updateCurrentWord();
+    return;
+  }
+  if (!game.pointerMoved && game.selected.length === 1) {
+    game.tapSelecting = true;
+    updateCurrentWord();
+    return;
+  }
+  finishTapSelection();
+}
+
+function addBlockToSelection(block) {
+  const existingIndex = game.selected.indexOf(block);
+  if (existingIndex >= 0) {
+    while (game.selected.length > existingIndex + 1) game.selected.pop().selected = false;
+    return;
+  }
+  const last = game.selected.at(-1);
+  if (!isNeighbor(last, block)) return;
+  block.selected = true;
+  game.selected.push(block);
+}
+
+function finishTapSelection() {
+  game.tapSelecting = false;
+  game.pointerStart = null;
+  game.pointerMoved = false;
+  if (game.selected.length) submitSelection();
 }
 
 function pointerPosition(event) {
@@ -752,6 +811,9 @@ function rejectWord(word) {
 function clearSelection() {
   for (const block of game.selected) block.selected = false;
   game.selected = [];
+  game.tapSelecting = false;
+  game.pointerStart = null;
+  game.pointerMoved = false;
 }
 
 function updateCurrentWord() {
@@ -920,8 +982,8 @@ function draw() {
   ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   drawBoardBackground();
   drawThreshold();
-  drawSelectionLines();
   for (const block of [...game.blocks].sort((a, b) => a.drawY - b.drawY)) drawBlock(block);
+  drawSelectionLines();
   drawFloaters();
   if (game.paused && !game.gameOver && !modal.open) drawPauseOverlay();
   const definition = $("definition");
@@ -1004,8 +1066,14 @@ function drawBlock(block) {
 function drawSelectionLines() {
   if (game.selected.length < 2) return;
   ctx.save();
-  ctx.strokeStyle = "rgba(61,64,91,0.38)";
-  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.rect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  for (const block of game.selected) {
+    ctx.roundRect(block.x * CELL_SIZE + 6, block.drawY * CELL_SIZE + 6, CELL_SIZE - 12, CELL_SIZE - 12, 6);
+  }
+  ctx.clip("evenodd");
+  ctx.strokeStyle = PALETTE[5];
+  ctx.lineWidth = 5;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.beginPath();
@@ -1104,6 +1172,8 @@ function updateHud() {
   const elapsed = 1 - Math.max(0, Math.min(1, game.timeLeft / game.secondsPerMove));
   const remainingColor = game.timeLeft <= game.secondsPerMove * 0.25 ? PALETTE[4] : PALETTE[3];
   $("timerBox").style.background = `conic-gradient(from -90deg, ${PALETTE[1]} 0deg ${elapsed * 360}deg, ${remainingColor} ${elapsed * 360}deg 360deg)`;
+  $("timerText").textContent = Math.max(0, Math.ceil(game.timeLeft));
+  $("timerBox").setAttribute("aria-label", `Drop blocks now. ${Math.max(0, Math.ceil(game.timeLeft))} seconds left`);
   $("pauseButton").textContent = game.paused ? ">" : "II";
   fitHudText();
 }

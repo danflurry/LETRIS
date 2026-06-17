@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="preload" href="fonts/FredokaOne-Regular.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=20260617-clean1">
+  <link rel="stylesheet" href="styles.css?v=20260617-input1">
 </head>
 <body>
   <main id="app" class="shell" aria-live="polite">
@@ -54,7 +54,9 @@
         <div class="pill level-pill">Lv. <span id="levelText">1</span></div>
         <div class="pill score-pill"><span class="pill-label">Score</span><span id="scoreText">0</span></div>
         <div class="pill removed-pill"><span class="pill-label">Blocks</span><span id="removedText">0</span></div>
-        <div id="timerBox" class="timer-box" title="Block timer" aria-label="Block timer"></div>
+        <button id="timerBox" class="timer-box" type="button" title="Drop blocks now" aria-label="Drop blocks now">
+          <span id="timerText">60</span>
+        </button>
       </header>
 
       <canvas id="gameCanvas" width="280" height="840"></canvas>
@@ -76,6 +78,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=20260617-clean1"></script>
+  <script src="app.js?v=20260617-input6"></script>
 </body>
 </html>
