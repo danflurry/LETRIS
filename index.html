@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Letris</title>
   <link rel="preload" href="fonts/FredokaOne-Regular.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=20260617-mobile3">
+  <link rel="stylesheet" href="styles.css?v=20260617-header1">
 </head>
 <body>
   <main id="app" class="shell" aria-live="polite">
@@ -54,13 +54,11 @@
 
       <canvas id="gameCanvas" width="280" height="840"></canvas>
 
-      <footer class="word-panel">
+      <footer class="word-panel" aria-hidden="true">
         <div id="currentWord" class="current-word"></div>
         <div id="findStatus" class="find-status"></div>
         <div id="definition" class="definition"></div>
       </footer>
-
-      <div id="definitionToast" class="definition-toast" role="status" aria-live="polite"></div>
     </section>
   </main>
 
@@ -73,6 +71,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=20260617-mobile3"></script>
+  <script src="app.js?v=20260617-header1"></script>
 </body>
 </html>

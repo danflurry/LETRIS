@@ -75,7 +75,6 @@ const game = {
   soundEnabled: true,
   audio: null,
   lastFrame: 0,
-  toastTimer: null,
   wordBank: new Map(),
   wordsByLength: new Map(),
   loading: true
@@ -202,7 +201,6 @@ function resetRun() {
   game.definition = "";
   game.wordStatus = "";
   game.wordCelebrationUntil = 0;
-  hideDefinitionToast();
   game.wordsFoundThisLevel = [];
   game.paused = false;
   game.gameOver = false;
@@ -591,7 +589,6 @@ function acceptWord(displayWord, resolvedWord) {
   game.definition = game.wordBank.get(resolvedWord);
   game.wordStatus = wordStatus(resolvedWord);
   game.wordCelebrationUntil = ["brand_new", "player_new"].includes(game.wordStatus) ? performance.now() + WORD_CELEBRATION_MS : 0;
-  showDefinitionToast(resolvedWord);
   resetMoveTimer();
   game.blocksRemoved += game.selected.length;
   game.validBlocksCleared += game.selected.length;
@@ -672,33 +669,6 @@ function wordStatusLabel(status) {
   if (status === "brand_new") return "New Global Word Found!";
   if (status === "player_new") return "New Word Found!";
   return "";
-}
-
-function showDefinitionToast(word) {
-  const toast = $("definitionToast");
-  if (!toast || !game.definition) return;
-  const status = wordStatusLabel(game.wordStatus);
-  toast.innerHTML = `
-    <div class="toast-word">${escapeHtml(word)}</div>
-    ${status ? `<div class="toast-status">${escapeHtml(status)}</div>` : ""}
-    <div class="toast-definition">${escapeHtml(game.definition)}</div>
-  `;
-  toast.classList.add("show");
-  if (game.toastTimer) clearTimeout(game.toastTimer);
-  game.toastTimer = setTimeout(() => {
-    toast.classList.remove("show");
-    game.toastTimer = null;
-  }, 4200);
-}
-
-function hideDefinitionToast() {
-  const toast = $("definitionToast");
-  if (game.toastTimer) clearTimeout(game.toastTimer);
-  game.toastTimer = null;
-  if (toast) {
-    toast.classList.remove("show");
-    toast.innerHTML = "";
-  }
 }
 
 function wordStatus(word) {
