@@ -103,12 +103,12 @@ async function init() {
   bindUi();
   setupHomeTitlePhysics();
   drawLoading();
+  requestAnimationFrame(loop);
   await loadWordBank();
   game.loading = false;
   const remembered = state.settings.lastUsername || "";
   $("username").value = remembered;
   $("rememberName").checked = Boolean(remembered);
-  requestAnimationFrame(loop);
 }
 
 function bindUi() {
@@ -1182,7 +1182,7 @@ const HOW_TO_LESSONS = [
 function showHowTo() {
   showModal("How To Play", `
     <div class="howto-simulator">
-      <canvas id="howToCanvas" class="howto-stage" width="280" height="448" aria-label="Gameplay lesson animation"></canvas>
+      <canvas id="howToCanvas" class="howto-stage" width="280" height="560" aria-label="Gameplay lesson animation"></canvas>
       <div class="howto-copy">
         <h3 id="howToLessonTitle"></h3>
         <p id="howToLessonCopy"></p>
@@ -1203,8 +1203,13 @@ function initHowToSimulator() {
     ctx: canvasEl.getContext("2d"),
     lessonIndex: 0,
     elapsed: 0,
-    blocks: []
+    blocks: [],
+    swipeStartX: null,
+    swipeStartY: null
   };
+  canvasEl.addEventListener("pointerdown", howToPointerDown);
+  canvasEl.addEventListener("pointerup", howToPointerUp);
+  canvasEl.addEventListener("pointercancel", howToPointerCancel);
   for (const button of document.querySelectorAll(".howto-tab")) {
     button.addEventListener("click", () => setHowToLesson(Number(button.dataset.lesson || 0)));
   }
@@ -1225,20 +1230,47 @@ function setHowToLesson(index) {
   drawHowToSimulator();
 }
 
+function advanceHowToLesson(delta) {
+  if (!howToSim) return;
+  const next = (howToSim.lessonIndex + delta + HOW_TO_LESSONS.length) % HOW_TO_LESSONS.length;
+  setHowToLesson(next);
+}
+
+function howToPointerDown(event) {
+  if (!howToSim) return;
+  howToSim.swipeStartX = event.clientX;
+  howToSim.swipeStartY = event.clientY;
+}
+
+function howToPointerUp(event) {
+  if (!howToSim || howToSim.swipeStartX === null) return;
+  const dx = event.clientX - howToSim.swipeStartX;
+  const dy = event.clientY - howToSim.swipeStartY;
+  howToPointerCancel();
+  if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+  advanceHowToLesson(dx < 0 ? 1 : -1);
+}
+
+function howToPointerCancel() {
+  if (!howToSim) return;
+  howToSim.swipeStartX = null;
+  howToSim.swipeStartY = null;
+}
+
 function makeHowToBlocks(id) {
   const specs = {
     words: [
-      ["C", 1, 4, PALETTE[1]], ["A", 2, 3, PALETTE[2]], ["T", 3, 4, PALETTE[3]],
-      ["R", 0, 6, PALETTE[1]], ["E", 1, 6, PALETTE[2]], ["S", 2, 6, PALETTE[3]], ["T", 3, 6, PALETTE[4]]
+      ["C", 1, 6, PALETTE[1]], ["A", 2, 5, PALETTE[2]], ["T", 3, 6, PALETTE[3]],
+      ["R", 0, 8, PALETTE[1]], ["E", 1, 8, PALETTE[2]], ["S", 2, 8, PALETTE[3]], ["T", 3, 8, PALETTE[4]], ["O", 4, 8, PALETTE[1]]
     ],
     levels: [
-      ["S", 0, 2, PALETTE[1]], ["A", 1, 3, PALETTE[2]], ["F", 2, 5, PALETTE[3]], ["E", 3, 5, PALETTE[4]], ["N", 4, 6, PALETTE[1]]
+      ["S", 0, 4, PALETTE[1]], ["A", 1, 5, PALETTE[2]], ["F", 2, 7, PALETTE[3]], ["E", 3, 7, PALETTE[4]], ["N", 4, 8, PALETTE[1]], ["D", 0, 9, PALETTE[2]], ["O", 1, 9, PALETTE[3]]
     ],
     timer: [
-      ["T", 0, 7, PALETTE[1]], ["I", 1, 7, PALETTE[2]], ["M", 2, 7, PALETTE[3]], ["E", 3, 7, PALETTE[1]]
+      ["T", 0, 9, PALETTE[1]], ["I", 1, 9, PALETTE[2]], ["M", 2, 9, PALETTE[3]], ["E", 3, 9, PALETTE[1]]
     ],
     wild: [
-      ["P", 1, 5, PALETTE[1]], ["L", 2, 5, PALETTE[2]], ["Y", 3, 5, PALETTE[3]], ["S", 2, 6, PALETTE[1]]
+      ["P", 1, 7, PALETTE[1]], ["L", 2, 7, PALETTE[2]], ["Y", 3, 7, PALETTE[3]], ["S", 2, 8, PALETTE[1]], ["E", 1, 9, PALETTE[2]], ["T", 2, 9, PALETTE[3]]
     ]
   }[id];
   return specs.map(([letter, x, y, color], index) => ({
@@ -1296,7 +1328,7 @@ function updateHowToLessonState(id, elapsed) {
       blocks.push({
         letter: letters[i],
         x: i,
-        y: 5 + (i % 2),
+        y: 6 + (i % 2),
         drawY: -randomRange(1.5, 4),
         velocity: 0,
         color: TIMER_BLOCK_COLOR,
@@ -1325,18 +1357,39 @@ function drawHowToSimulator() {
   simCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
   simCtx.fillStyle = PALETTE[2];
   simCtx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+  drawHowToBoardFrame(simCtx);
   drawHowToThreshold(simCtx, lesson.id);
   drawHowToTimer(simCtx, lesson.id, howToSim.elapsed);
   drawHowToSelection(simCtx, lesson.id, howToSim.elapsed);
   for (const block of [...howToSim.blocks].sort((a, b) => a.drawY - b.drawY)) drawHowToBlock(simCtx, block);
+  drawHowToHand(simCtx, lesson.id, howToSim.elapsed);
   drawHowToLabel(simCtx, lesson.id, howToSim.elapsed);
+}
+
+function drawHowToBoardFrame(simCtx) {
+  simCtx.save();
+  simCtx.strokeStyle = "rgba(61,64,91,0.13)";
+  simCtx.lineWidth = 2;
+  for (let y = 1; y < 10; y += 1) {
+    simCtx.beginPath();
+    simCtx.moveTo(0, y * CELL_SIZE);
+    simCtx.lineTo(5 * CELL_SIZE, y * CELL_SIZE);
+    simCtx.stroke();
+  }
+  for (let x = 1; x < 5; x += 1) {
+    simCtx.beginPath();
+    simCtx.moveTo(x * CELL_SIZE, 0);
+    simCtx.lineTo(x * CELL_SIZE, 10 * CELL_SIZE);
+    simCtx.stroke();
+  }
+  simCtx.restore();
 }
 
 function drawHowToThreshold(simCtx, id) {
   if (id !== "levels") return;
   simCtx.fillStyle = "rgba(106,140,175,0.38)";
   simCtx.beginPath();
-  simCtx.roundRect(0, 5 * CELL_SIZE, 5 * CELL_SIZE, 3 * CELL_SIZE, 14);
+  simCtx.roundRect(0, 7 * CELL_SIZE, 5 * CELL_SIZE, 3 * CELL_SIZE, 14);
   simCtx.fill();
 }
 
@@ -1365,6 +1418,57 @@ function drawHowToTimer(simCtx, id, elapsed) {
   simCtx.beginPath();
   simCtx.roundRect(x, y, size, size, 8);
   simCtx.stroke();
+}
+
+function drawHowToHand(simCtx, id, elapsed) {
+  const pos = howToHandPosition(id, elapsed);
+  if (!pos) return;
+  simCtx.save();
+  simCtx.globalAlpha = pos.alpha;
+  simCtx.translate(pos.x, pos.y);
+  simCtx.rotate(pos.rotation || 0);
+  simCtx.shadowColor = "rgba(61,64,91,0.25)";
+  simCtx.shadowBlur = 8;
+  simCtx.shadowOffsetY = 4;
+  simCtx.fillStyle = PALETTE[0];
+  simCtx.strokeStyle = PALETTE[5];
+  simCtx.lineWidth = 4;
+  simCtx.beginPath();
+  simCtx.roundRect(-11, -38, 22, 52, 11);
+  simCtx.fill();
+  simCtx.stroke();
+  simCtx.beginPath();
+  simCtx.arc(0, 22, 18, 0, Math.PI * 2);
+  simCtx.fill();
+  simCtx.stroke();
+  simCtx.restore();
+}
+
+function howToHandPosition(id, elapsed) {
+  const centers = {
+    words: [[1, 6], [2, 5], [3, 6]],
+    levels: [[0, 4], [1, 5]],
+    timer: [[4.1, 0.6], [4.1, 0.6]],
+    wild: [[1, 7], [2, 7], [3, 7]]
+  }[id];
+  if (!centers) return null;
+  const start = id === "timer" ? 0.35 : 0.95;
+  const end = id === "timer" ? 2.15 : 3.05;
+  if (elapsed < start || elapsed > end) return null;
+  const t = Math.max(0, Math.min(1, (elapsed - start) / (end - start)));
+  const scaled = t * (centers.length - 1);
+  const i = Math.min(centers.length - 2, Math.floor(scaled));
+  const local = scaled - i;
+  const from = centers[i];
+  const to = centers[i + 1];
+  const x = (from[0] + (to[0] - from[0]) * local + 0.5) * CELL_SIZE;
+  const y = (from[1] + (to[1] - from[1]) * local + 0.5) * CELL_SIZE;
+  return {
+    x,
+    y,
+    alpha: Math.min(1, Math.min((elapsed - start) / 0.25, (end - elapsed) / 0.25)),
+    rotation: id === "timer" ? -0.1 : 0.22
+  };
 }
 
 function drawHowToSelection(simCtx, id, elapsed) {
