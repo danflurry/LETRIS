@@ -213,7 +213,7 @@ button {
   --hud-height: 38px;
   --board-width: calc(100vw - 10px - var(--safe-left) - var(--safe-right));
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   justify-items: center;
   align-content: stretch;
   align-items: center;
@@ -306,7 +306,7 @@ button {
 }
 
 #gameCanvas {
-  grid-row: 2;
+  grid-row: 3;
   width: var(--board-width);
   height: auto;
   align-self: end;
@@ -332,16 +332,14 @@ button {
 }
 
 .definition-toast {
-  position: absolute;
-  left: max(10px, var(--safe-left));
-  right: max(10px, var(--safe-right));
-  bottom: max(12px, var(--safe-bottom));
-  z-index: 5;
-  display: grid;
+  grid-row: 2;
+  z-index: 2;
+  display: none;
   gap: 4px;
-  max-width: 430px;
+  width: min(var(--board-width), 430px);
+  max-height: min(28vh, 150px);
   margin: 0 auto;
-  padding: 12px 14px;
+  padding: 9px 12px;
   border-radius: 8px;
   background: rgba(244, 241, 222, 0.96);
   color: var(--ink);
@@ -349,15 +347,12 @@ button {
   font-family: system-ui, sans-serif;
   font-weight: 800;
   line-height: 1.22;
-  opacity: 0;
-  transform: translateY(16px);
+  overflow: hidden;
   pointer-events: none;
-  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .definition-toast.show {
-  opacity: 1;
-  transform: translateY(0);
+  display: grid;
 }
 
 .toast-word {
@@ -376,6 +371,10 @@ button {
 .toast-definition {
   font-size: 0.92rem;
   text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .current-word {
