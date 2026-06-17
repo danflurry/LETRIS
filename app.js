@@ -47,7 +47,6 @@ const homeTitle = {
   blocks: [],
   ready: false
 };
-let howToSim = null;
 const game = {
   grid: [],
   blocks: [],
@@ -76,9 +75,6 @@ const game = {
   wordsFoundThisLevel: [],
   username: "",
   playerFoundWords: new Set(),
-  musicEnabled: true,
-  soundEnabled: true,
-  audio: null,
   lastFrame: 0,
   wordBank: new Map(),
   wordsByLength: new Map(),
@@ -101,14 +97,19 @@ init();
 async function init() {
   syncViewportHeight();
   bindUi();
-  setupHomeTitlePhysics();
   drawLoading();
-  requestAnimationFrame(loop);
-  await loadWordBank();
+  await Promise.all([
+    preloadAppAssets(),
+    loadWordBank()
+  ]);
   game.loading = false;
   const remembered = state.settings.lastUsername || "";
   $("username").value = remembered;
   $("rememberName").checked = Boolean(remembered);
+  $("loadingScreen").classList.add("hidden");
+  $("homeScreen").classList.remove("hidden");
+  setupHomeTitlePhysics();
+  requestAnimationFrame(loop);
 }
 
 function bindUi() {
@@ -130,7 +131,6 @@ function bindUi() {
   });
   $("howToButton").addEventListener("click", showHowTo);
   $("scoresButton").addEventListener("click", showScores);
-  $("settingsButton").addEventListener("click", showSettings);
   $("homeButton").addEventListener("click", confirmQuit);
   $("pauseButton").addEventListener("click", togglePause);
   modalClose.addEventListener("click", closeModal);
@@ -146,6 +146,31 @@ function bindUi() {
       if (!game.paused) game.timeLeft = 0;
     }
     if (event.code === "ShiftLeft" || event.code === "ShiftRight") togglePause();
+  });
+}
+
+async function preloadAppAssets() {
+  const fontReady = document.fonts
+    ? Promise.all([
+      document.fonts.load("30px FredokaLetris"),
+      document.fonts.ready
+    ])
+    : Promise.resolve();
+  const imageReady = Promise.all([
+    preloadImage("home_icon.png"),
+    preloadImage("apple-touch-icon.png"),
+    preloadImage("icon-192.png"),
+    preloadImage("icon-512.png")
+  ]);
+  await Promise.all([fontReady, imageReady]);
+}
+
+function preloadImage(src) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = resolve;
+    image.onerror = resolve;
+    image.src = src;
   });
 }
 
@@ -177,14 +202,11 @@ async function loadWordBank() {
 function startGame(username) {
   game.username = username;
   game.playerFoundWords = new Set(state.players[username].wordsFound || []);
-  game.musicEnabled = state.settings.musicEnabled !== false;
-  game.soundEnabled = state.settings.soundEnabled !== false;
   resetRun();
   document.body.classList.add("playing");
   $("homeScreen").classList.add("hidden");
   $("gameScreen").classList.remove("hidden");
   syncViewportHeight();
-  startMusic();
 }
 
 function resetRun() {
@@ -268,7 +290,6 @@ function loop(now) {
   const dt = Math.min((now - (game.lastFrame || now)) / 1000, 0.05);
   game.lastFrame = now;
   updateHomeTitlePhysics(dt);
-  updateHowToSimulator(dt);
   if (!$("gameScreen").classList.contains("hidden") && !game.paused && !game.loading) update(dt);
   draw();
   requestAnimationFrame(loop);
@@ -850,7 +871,6 @@ function advanceLevel() {
   game.levelCompleteTimer = null;
   game.paused = false;
   populateInitialBlocks();
-  startMusic();
 }
 
 function endGame() {
@@ -884,7 +904,6 @@ function confirmQuit() {
 }
 
 function goHome() {
-  stopMusic();
   document.body.classList.remove("playing");
   $("gameScreen").classList.add("hidden");
   $("homeScreen").classList.remove("hidden");
@@ -1148,412 +1167,19 @@ function addFloater(text, pos, color) {
   });
 }
 
-const HOW_TO_LESSONS = [
-  {
-    id: "words",
-    label: "Words",
-    title: "Make Words",
-    copy: "Drag through neighboring blocks. The selected path behaves like the real board: linked blocks highlight, then valid words clear.",
-    duration: 4.6
-  },
-  {
-    id: "levels",
-    label: "Levels",
-    title: "Clear The Win Area",
-    copy: "A level ends when every remaining block has fallen into the shaded area at the bottom of the grid.",
-    duration: 4.8
-  },
-  {
-    id: "timer",
-    label: "Timer",
-    title: "Beat The Timer",
-    copy: "When the timer empties, five new blocks fall in. Every ten levels, that timer gets five seconds shorter.",
-    duration: 5.2
-  },
-  {
-    id: "wild",
-    label: "Wild",
-    title: "Wild Cards",
-    copy: "Every 20 valid blocks cleared flips a random block into a wildcard that can stand in for another letter.",
-    duration: 4.8
-  }
-];
-
 function showHowTo() {
   showModal("How To Play", `
-    <div class="howto-simulator">
-      <canvas id="howToCanvas" class="howto-stage" width="280" height="560" aria-label="Gameplay lesson animation"></canvas>
-      <div class="howto-copy">
-        <h3 id="howToLessonTitle"></h3>
-        <p id="howToLessonCopy"></p>
-      </div>
-      <div class="howto-tabs">
-        ${HOW_TO_LESSONS.map((lesson, index) => `<button class="howto-tab" type="button" data-lesson="${index}">${lesson.label}</button>`).join("")}
-      </div>
-    </div>
+    <h3>Make Words</h3>
+    <p>Drag through neighboring blocks to make a word. Release to submit it. Words must be at least three letters long.</p>
+    <h3>Clear Levels</h3>
+    <p>Clear blocks until every remaining block is inside the shaded win area at the bottom of the board.</p>
+    <h3>Timer</h3>
+    <p>When the timer runs out, five new blocks fall in. The timer starts at 60 seconds and drops by 5 seconds every 10 levels.</p>
+    <h3>Scoring</h3>
+    <p>Rare letters, longer words, later levels, and bonus blocks are worth more points.</p>
+    <h3>Wild Cards</h3>
+    <p>Every 20 valid blocks cleared turns a random block into a wild card.</p>
   `);
-  initHowToSimulator();
-}
-
-function initHowToSimulator() {
-  const canvasEl = $("howToCanvas");
-  if (!canvasEl) return;
-  howToSim = {
-    canvas: canvasEl,
-    ctx: canvasEl.getContext("2d"),
-    lessonIndex: 0,
-    elapsed: 0,
-    blocks: [],
-    swipeStartX: null,
-    swipeStartY: null
-  };
-  canvasEl.addEventListener("pointerdown", howToPointerDown);
-  canvasEl.addEventListener("pointerup", howToPointerUp);
-  canvasEl.addEventListener("pointercancel", howToPointerCancel);
-  for (const button of document.querySelectorAll(".howto-tab")) {
-    button.addEventListener("click", () => setHowToLesson(Number(button.dataset.lesson || 0)));
-  }
-  setHowToLesson(0);
-}
-
-function setHowToLesson(index) {
-  if (!howToSim) return;
-  howToSim.lessonIndex = Math.max(0, Math.min(HOW_TO_LESSONS.length - 1, index));
-  howToSim.elapsed = 0;
-  howToSim.blocks = makeHowToBlocks(HOW_TO_LESSONS[howToSim.lessonIndex].id);
-  const lesson = HOW_TO_LESSONS[howToSim.lessonIndex];
-  $("howToLessonTitle").textContent = lesson.title;
-  $("howToLessonCopy").textContent = lesson.copy;
-  for (const button of document.querySelectorAll(".howto-tab")) {
-    button.classList.toggle("active", Number(button.dataset.lesson || 0) === howToSim.lessonIndex);
-  }
-  drawHowToSimulator();
-}
-
-function advanceHowToLesson(delta) {
-  if (!howToSim) return;
-  const next = (howToSim.lessonIndex + delta + HOW_TO_LESSONS.length) % HOW_TO_LESSONS.length;
-  setHowToLesson(next);
-}
-
-function howToPointerDown(event) {
-  if (!howToSim) return;
-  howToSim.swipeStartX = event.clientX;
-  howToSim.swipeStartY = event.clientY;
-}
-
-function howToPointerUp(event) {
-  if (!howToSim || howToSim.swipeStartX === null) return;
-  const dx = event.clientX - howToSim.swipeStartX;
-  const dy = event.clientY - howToSim.swipeStartY;
-  howToPointerCancel();
-  if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
-  advanceHowToLesson(dx < 0 ? 1 : -1);
-}
-
-function howToPointerCancel() {
-  if (!howToSim) return;
-  howToSim.swipeStartX = null;
-  howToSim.swipeStartY = null;
-}
-
-function makeHowToBlocks(id) {
-  const specs = {
-    words: [
-      ["C", 1, 6, PALETTE[1]], ["A", 2, 5, PALETTE[2]], ["T", 3, 6, PALETTE[3]],
-      ["R", 0, 8, PALETTE[1]], ["E", 1, 8, PALETTE[2]], ["S", 2, 8, PALETTE[3]], ["T", 3, 8, PALETTE[4]], ["O", 4, 8, PALETTE[1]]
-    ],
-    levels: [
-      ["S", 0, 4, PALETTE[1]], ["A", 1, 5, PALETTE[2]], ["F", 2, 7, PALETTE[3]], ["E", 3, 7, PALETTE[4]], ["N", 4, 8, PALETTE[1]], ["D", 0, 9, PALETTE[2]], ["O", 1, 9, PALETTE[3]]
-    ],
-    timer: [
-      ["T", 0, 9, PALETTE[1]], ["I", 1, 9, PALETTE[2]], ["M", 2, 9, PALETTE[3]], ["E", 3, 9, PALETTE[1]]
-    ],
-    wild: [
-      ["P", 1, 7, PALETTE[1]], ["L", 2, 7, PALETTE[2]], ["Y", 3, 7, PALETTE[3]], ["S", 2, 8, PALETTE[1]], ["E", 1, 9, PALETTE[2]], ["T", 2, 9, PALETTE[3]]
-    ]
-  }[id];
-  return specs.map(([letter, x, y, color], index) => ({
-    letter,
-    x,
-    y,
-    drawY: -randomRange(1.5, 5.5) - index * 0.25,
-    velocity: 0,
-    color,
-    selected: false,
-    flash: 0,
-    squash: 0,
-    rotation: randomRange(-0.08, 0.08),
-    angularVelocity: randomRange(-0.02, 0.02),
-    grounded: false,
-    fallDelay: index * 0.05
-  }));
-}
-
-function updateHowToSimulator(dt) {
-  if (!howToSim || !modal.open || !$("howToCanvas")) return;
-  const lesson = HOW_TO_LESSONS[howToSim.lessonIndex];
-  howToSim.elapsed += dt;
-  if (howToSim.elapsed > lesson.duration) {
-    howToSim.elapsed = 0;
-    howToSim.blocks = makeHowToBlocks(lesson.id);
-  }
-  for (const block of howToSim.blocks) {
-    if (block.fallDelay > 0) block.fallDelay -= dt;
-    else updateLooseBlockPhysics(block, dt);
-    if (block.flash > 0) block.flash = Math.max(0, block.flash - dt);
-  }
-  updateHowToLessonState(lesson.id, howToSim.elapsed);
-  drawHowToSimulator();
-}
-
-function updateHowToLessonState(id, elapsed) {
-  const blocks = howToSim.blocks;
-  for (const block of blocks) block.selected = false;
-  if (id === "words") {
-    const selectedCount = elapsed < 1.2 ? 0 : elapsed < 1.75 ? 1 : elapsed < 2.3 ? 2 : elapsed < 3.15 ? 3 : 0;
-    blocks.slice(0, selectedCount).forEach((block) => block.selected = true);
-    if (elapsed > 3.15) blocks.slice(0, 3).forEach((block) => {
-      block.flash = 0.25;
-      block.drawY = Math.min(block.drawY + 0.18, block.y + 0.4);
-    });
-  }
-  if (id === "levels" && elapsed > 2.15) {
-    blocks[0].drawY = Math.min(blocks[0].drawY + 0.18, 5);
-    blocks[1].drawY = Math.min(blocks[1].drawY + 0.14, 5);
-  }
-  if (id === "timer" && elapsed > 2.4 && blocks.length < 9) {
-    const letters = ["N", "E", "W", "S", "T"];
-    for (let i = 0; i < 5; i += 1) {
-      blocks.push({
-        letter: letters[i],
-        x: i,
-        y: 6 + (i % 2),
-        drawY: -randomRange(1.5, 4),
-        velocity: 0,
-        color: TIMER_BLOCK_COLOR,
-        selected: false,
-        flash: 0,
-        squash: 0,
-        rotation: randomRange(-0.08, 0.08),
-        angularVelocity: randomRange(-0.02, 0.02),
-        grounded: false,
-        fallDelay: i * 0.08
-      });
-    }
-  }
-  if (id === "wild" && elapsed > 2.2) {
-    blocks[1].letter = STAR;
-    blocks[1].color = WILD_CARD_BLOCK_COLOR;
-    blocks[1].flash = Math.max(blocks[1].flash, 0.2);
-  }
-}
-
-function drawHowToSimulator() {
-  if (!howToSim) return;
-  const simCtx = howToSim.ctx;
-  const canvasEl = howToSim.canvas;
-  const lesson = HOW_TO_LESSONS[howToSim.lessonIndex];
-  simCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-  simCtx.fillStyle = PALETTE[2];
-  simCtx.fillRect(0, 0, canvasEl.width, canvasEl.height);
-  drawHowToBoardFrame(simCtx);
-  drawHowToThreshold(simCtx, lesson.id);
-  drawHowToTimer(simCtx, lesson.id, howToSim.elapsed);
-  drawHowToSelection(simCtx, lesson.id, howToSim.elapsed);
-  for (const block of [...howToSim.blocks].sort((a, b) => a.drawY - b.drawY)) drawHowToBlock(simCtx, block);
-  drawHowToHand(simCtx, lesson.id, howToSim.elapsed);
-  drawHowToLabel(simCtx, lesson.id, howToSim.elapsed);
-}
-
-function drawHowToBoardFrame(simCtx) {
-  simCtx.save();
-  simCtx.strokeStyle = "rgba(61,64,91,0.13)";
-  simCtx.lineWidth = 2;
-  for (let y = 1; y < 10; y += 1) {
-    simCtx.beginPath();
-    simCtx.moveTo(0, y * CELL_SIZE);
-    simCtx.lineTo(5 * CELL_SIZE, y * CELL_SIZE);
-    simCtx.stroke();
-  }
-  for (let x = 1; x < 5; x += 1) {
-    simCtx.beginPath();
-    simCtx.moveTo(x * CELL_SIZE, 0);
-    simCtx.lineTo(x * CELL_SIZE, 10 * CELL_SIZE);
-    simCtx.stroke();
-  }
-  simCtx.restore();
-}
-
-function drawHowToThreshold(simCtx, id) {
-  if (id !== "levels") return;
-  simCtx.fillStyle = "rgba(106,140,175,0.38)";
-  simCtx.beginPath();
-  simCtx.roundRect(0, 7 * CELL_SIZE, 5 * CELL_SIZE, 3 * CELL_SIZE, 14);
-  simCtx.fill();
-}
-
-function drawHowToTimer(simCtx, id, elapsed) {
-  if (id !== "timer") return;
-  const progress = Math.min(1, elapsed / 2.35);
-  const x = 218;
-  const y = 10;
-  const size = 48;
-  const remainingColor = progress > 0.75 ? PALETTE[4] : PALETTE[3];
-  simCtx.save();
-  simCtx.beginPath();
-  simCtx.roundRect(x, y, size, size, 8);
-  simCtx.clip();
-  simCtx.fillStyle = PALETTE[1];
-  simCtx.fillRect(x, y, size, size);
-  simCtx.beginPath();
-  simCtx.moveTo(x + size / 2, y + size / 2);
-  simCtx.arc(x + size / 2, y + size / 2, size, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
-  simCtx.closePath();
-  simCtx.fillStyle = remainingColor;
-  simCtx.fill();
-  simCtx.restore();
-  simCtx.strokeStyle = PALETTE[0];
-  simCtx.lineWidth = 4;
-  simCtx.beginPath();
-  simCtx.roundRect(x, y, size, size, 8);
-  simCtx.stroke();
-}
-
-function drawHowToHand(simCtx, id, elapsed) {
-  const pos = howToHandPosition(id, elapsed);
-  if (!pos) return;
-  simCtx.save();
-  simCtx.globalAlpha = pos.alpha;
-  simCtx.translate(pos.x, pos.y);
-  simCtx.rotate(pos.rotation || 0);
-  simCtx.shadowColor = "rgba(61,64,91,0.25)";
-  simCtx.shadowBlur = 8;
-  simCtx.shadowOffsetY = 4;
-  simCtx.fillStyle = PALETTE[0];
-  simCtx.strokeStyle = PALETTE[5];
-  simCtx.lineWidth = 4;
-  simCtx.beginPath();
-  simCtx.roundRect(-11, -38, 22, 52, 11);
-  simCtx.fill();
-  simCtx.stroke();
-  simCtx.beginPath();
-  simCtx.arc(0, 22, 18, 0, Math.PI * 2);
-  simCtx.fill();
-  simCtx.stroke();
-  simCtx.restore();
-}
-
-function howToHandPosition(id, elapsed) {
-  const centers = {
-    words: [[1, 6], [2, 5], [3, 6]],
-    levels: [[0, 4], [1, 5]],
-    timer: [[4.1, 0.6], [4.1, 0.6]],
-    wild: [[1, 7], [2, 7], [3, 7]]
-  }[id];
-  if (!centers) return null;
-  const start = id === "timer" ? 0.35 : 0.95;
-  const end = id === "timer" ? 2.15 : 3.05;
-  if (elapsed < start || elapsed > end) return null;
-  const t = Math.max(0, Math.min(1, (elapsed - start) / (end - start)));
-  const scaled = t * (centers.length - 1);
-  const i = Math.min(centers.length - 2, Math.floor(scaled));
-  const local = scaled - i;
-  const from = centers[i];
-  const to = centers[i + 1];
-  const x = (from[0] + (to[0] - from[0]) * local + 0.5) * CELL_SIZE;
-  const y = (from[1] + (to[1] - from[1]) * local + 0.5) * CELL_SIZE;
-  return {
-    x,
-    y,
-    alpha: Math.min(1, Math.min((elapsed - start) / 0.25, (end - elapsed) / 0.25)),
-    rotation: id === "timer" ? -0.1 : 0.22
-  };
-}
-
-function drawHowToSelection(simCtx, id, elapsed) {
-  if (id !== "words" || elapsed < 1.2 || elapsed > 3.15) return;
-  const selected = howToSim.blocks.filter((block) => block.selected);
-  if (selected.length < 2) return;
-  simCtx.save();
-  simCtx.strokeStyle = "rgba(61,64,91,0.38)";
-  simCtx.lineWidth = 8;
-  simCtx.lineCap = "round";
-  simCtx.lineJoin = "round";
-  simCtx.beginPath();
-  selected.forEach((block, index) => {
-    const x = (block.x + 0.5) * CELL_SIZE;
-    const y = (block.drawY + 0.5) * CELL_SIZE;
-    if (index === 0) simCtx.moveTo(x, y);
-    else simCtx.lineTo(x, y);
-  });
-  simCtx.stroke();
-  simCtx.restore();
-}
-
-function drawHowToBlock(simCtx, block) {
-  const squash = Math.max(0, Math.min(1, block.squash || 0));
-  const x = block.x * CELL_SIZE + 4 - squash * 4.5;
-  const y = block.drawY * CELL_SIZE + 4 + squash * 7;
-  const size = CELL_SIZE - 8;
-  const visualWidth = size + squash * 9;
-  const visualHeight = Math.max(size * 0.78, size - squash * 9.45);
-  const centerX = x + visualWidth / 2;
-  const centerY = y + visualHeight / 2;
-  const fill = block.letter === STAR ? howToGradient(simCtx, x, y, visualWidth, WILD_CARD_GRADIENT) : block.color;
-
-  simCtx.save();
-  simCtx.translate(centerX, centerY);
-  simCtx.rotate(Math.max(-0.11, Math.min(0.11, block.rotation || 0)));
-  simCtx.translate(-centerX, -centerY);
-  simCtx.shadowColor = "rgba(61,64,91,0.25)";
-  simCtx.shadowBlur = 8 + squash * 5;
-  simCtx.shadowOffsetY = 4 + squash * 2;
-  simCtx.beginPath();
-  simCtx.roundRect(x, y, visualWidth, visualHeight, 8);
-  simCtx.fillStyle = fill;
-  simCtx.fill();
-  simCtx.shadowColor = "transparent";
-  if (block.selected) {
-    simCtx.lineWidth = 5;
-    simCtx.strokeStyle = PALETTE[5];
-    simCtx.beginPath();
-    simCtx.roundRect(x + 2, y + 2, visualWidth - 4, visualHeight - 4, 8);
-    simCtx.stroke();
-  }
-  if (block.flash > 0) {
-    simCtx.globalAlpha = Math.min(0.45, block.flash);
-    simCtx.fillStyle = "#ffffff";
-    simCtx.beginPath();
-    simCtx.roundRect(x, y, visualWidth, visualHeight, 8);
-    simCtx.fill();
-    simCtx.globalAlpha = 1;
-  }
-  simCtx.fillStyle = block.color === TIMER_BLOCK_COLOR ? PALETTE[0] : "#111111";
-  simCtx.font = block.letter === STAR ? "34px FredokaLetris, sans-serif" : "30px FredokaLetris, sans-serif";
-  simCtx.textAlign = "center";
-  simCtx.textBaseline = "middle";
-  simCtx.fillText(block.letter === STAR ? "★" : block.letter, centerX, centerY + 1);
-  simCtx.restore();
-}
-
-function howToGradient(simCtx, x, y, size, colors) {
-  const gradient = simCtx.createLinearGradient(x, y, x + size, y + size);
-  gradient.addColorStop(0, colors[0]);
-  gradient.addColorStop(1, colors[1]);
-  return gradient;
-}
-
-function drawHowToLabel(simCtx, id, elapsed) {
-  simCtx.save();
-  simCtx.font = "24px FredokaLetris, sans-serif";
-  simCtx.textAlign = "center";
-  simCtx.textBaseline = "middle";
-  simCtx.fillStyle = PALETTE[5];
-  if (id === "words" && elapsed > 3.1) simCtx.fillText("CAT", 140, 86);
-  if (id === "wild") simCtx.fillText(elapsed > 2.2 ? "Wildcard!" : "20 blocks", 140, 90);
-  if (id === "levels" && elapsed > 3.4) simCtx.fillText("Level Clear", 140, 90);
-  simCtx.restore();
 }
 
 function showScores() {
@@ -1570,22 +1196,6 @@ function showScores() {
     .map((item, index) => `<div class="score-row"><span>${index + 1}</span><strong>${escapeHtml(item.word)} by ${escapeHtml(item.name)}</strong><span>${item.points}p</span></div>`)
     .join("");
   showModal("Local Scores", `${rows}${bestWords ? "<h3>Best Words</h3>" + bestWords : ""}`);
-}
-
-function showSettings() {
-  showModal("Settings", `
-    <div class="settings-grid">
-      <label><input id="settingMusic" type="checkbox" ${state.settings.musicEnabled === false ? "" : "checked"}> Music</label>
-      <label><input id="settingSound" type="checkbox" ${state.settings.soundEnabled === false ? "" : "checked"}> Sounds</label>
-    </div>
-  `, [
-    ["Save", () => {
-      state.settings.musicEnabled = $("settingMusic").checked;
-      state.settings.soundEnabled = $("settingSound").checked;
-      saveState();
-      closeModal();
-    }]
-  ]);
 }
 
 function showMessage(title, body) {
@@ -1611,24 +1221,7 @@ function showModal(title, body, actions = []) {
 }
 
 function closeModal() {
-  howToSim = null;
   modal.close();
-}
-
-function startMusic() {
-  stopMusic();
-  if (!game.musicEnabled) return;
-  const level = ((game.level - 1) % 20) + 1;
-  game.audio = new Audio(`music/level_${level}.wav`);
-  game.audio.loop = true;
-  game.audio.volume = 0.35;
-  game.audio.play().catch(() => {});
-}
-
-function stopMusic() {
-  if (!game.audio) return;
-  game.audio.pause();
-  game.audio = null;
 }
 
 function loadState() {

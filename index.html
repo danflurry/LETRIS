@@ -12,11 +12,18 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="preload" href="fonts/FredokaOne-Regular.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=20260617-home5">
+  <link rel="stylesheet" href="styles.css?v=20260617-clean1">
 </head>
 <body>
   <main id="app" class="shell" aria-live="polite">
-    <section id="homeScreen" class="screen home-screen">
+    <section id="loadingScreen" class="screen loading-screen">
+      <div class="loading-mark" aria-label="Letris loading">
+        <span>L</span>
+      </div>
+      <p>Loading</p>
+    </section>
+
+    <section id="homeScreen" class="screen home-screen hidden">
       <div class="brand">
         <div class="brand-title" aria-label="Letris">
           <span>L</span><span>E</span><span>T</span><span>R</span><span>I</span><span>S</span>
@@ -34,10 +41,6 @@
         <div class="home-actions">
           <button id="howToButton" type="button">How To Play</button>
           <button id="scoresButton" type="button">Scores</button>
-          <button id="settingsButton" type="button" aria-label="Settings" title="Settings">
-            <img src="settings.png" alt="">
-            <span>Settings</span>
-          </button>
         </div>
       </form>
     </section>
@@ -73,6 +76,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=20260617-home5"></script>
+  <script src="app.js?v=20260617-clean1"></script>
 </body>
 </html>
