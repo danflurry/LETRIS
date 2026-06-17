@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#f4f1de">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Letris">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Letris</title>
+  <link rel="preload" href="fonts/FredokaOne-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="styles.css?v=20260617-side2">
+</head>
+<body>
+  <main id="app" class="shell" aria-live="polite">
+    <section id="homeScreen" class="screen home-screen">
+      <div class="brand">
+        <div class="brand-title" aria-label="Letris">
+          <span>L</span><span>E</span><span>T</span><span>R</span><span>I</span><span>S</span>
+        </div>
+        <p class="brand-copy">A falling word game about quick paths, rare letters, and deliciously dangerous boards.</p>
+      </div>
+
+      <form id="playerForm" class="home-panel">
+        <label for="username">Player</label>
+        <input id="username" name="username" maxlength="15" autocomplete="nickname" placeholder="YOUR NAME">
+        <label class="remember-row">
+          <input id="rememberName" type="checkbox">
+          <span>Remember</span>
+        </label>
+        <button class="primary" type="submit">Play</button>
+        <div class="home-actions">
+          <button id="howToButton" type="button">How To Play</button>
+          <button id="scoresButton" type="button">Scores</button>
+          <button id="settingsButton" type="button" aria-label="Settings" title="Settings">
+            <img src="settings.png" alt="">
+            <span>Settings</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section id="gameScreen" class="screen game-screen hidden">
+      <header class="topbar">
+        <button id="homeButton" class="icon-button" type="button" title="Quit to home" aria-label="Quit to home">
+          <img src="home_icon.png" alt="">
+        </button>
+        <button id="pauseButton" class="icon-button" type="button" title="Pause" aria-label="Pause">II</button>
+        <div class="pill level-pill">Lv. <span id="levelText">1</span></div>
+        <div class="pill score-pill"><span class="pill-label">Score</span><span id="scoreText">0</span></div>
+        <div class="pill removed-pill"><span class="pill-label">Blocks</span><span id="removedText">0</span></div>
+        <div id="timerBox" class="timer-box" title="Block timer" aria-label="Block timer"></div>
+      </header>
+
+      <canvas id="gameCanvas" width="280" height="840"></canvas>
+
+      <footer class="word-panel">
+        <div id="currentWord" class="current-word"></div>
+        <div id="findStatus" class="find-status"></div>
+        <div id="definition" class="definition"></div>
+      </footer>
+    </section>
+  </main>
+
+  <dialog id="modal" class="modal">
+    <div class="modal-card">
+      <button id="modalClose" class="modal-close" type="button" aria-label="Close">X</button>
+      <h2 id="modalTitle"></h2>
+      <div id="modalBody" class="modal-body"></div>
+      <div id="modalActions" class="modal-actions"></div>
+    </div>
+  </dialog>
+
+  <script src="app.js?v=20260617-side2"></script>
+</body>
+</html>
