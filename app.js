@@ -3,8 +3,11 @@
 const GRID_WIDTH = 5;
 const GRID_HEIGHT = 15;
 const CELL_SIZE = 56;
-const CANVAS_WIDTH = GRID_WIDTH * CELL_SIZE;
-const CANVAS_HEIGHT = GRID_HEIGHT * CELL_SIZE;
+const BOARD_WIDTH = GRID_WIDTH * CELL_SIZE;
+const BOARD_HEIGHT = GRID_HEIGHT * CELL_SIZE;
+const CANVAS_GUTTER = 18;
+const CANVAS_WIDTH = BOARD_WIDTH + CANVAS_GUTTER * 2;
+const CANVAS_HEIGHT = BOARD_HEIGHT + CANVAS_GUTTER * 2;
 const STARTING_BLOCKS = 25;
 const SECONDS_UNTIL_NEW_BLOCKS = 60;
 const GRAVITY_ROWS = 58;
@@ -16,8 +19,10 @@ const AIR_DRAG = 0.994;
 const SQUASH_RECOVERY = 14;
 const ROTATION_DAMPING = 0.86;
 const SPECIAL_FLIP_DURATION = 0.42;
+const SPECIAL_BLOCK_SECONDS = 10;
 const STORAGE_KEY = "letris.web.v1";
 const STAR = "*";
+const WILDCARD_GLYPH = "\u2605";
 const WORD_CELEBRATION_MS = 3500;
 
 const PALETTE = ["#f4f1de", "#f2cc8f", "#eab69f", "#81b29a", "#e07a5f", "#3d405b"];
@@ -72,9 +77,12 @@ const game = {
   tapSelecting: false,
   pointerStart: null,
   pointerMoved: false,
+  tapSubmitBlock: null,
+  tapSubmitAt: 0,
   paused: false,
   gameOver: false,
   levelCompleteTimer: null,
+  levelCleared: false,
   wordsFoundThisLevel: [],
   username: "",
   playerFoundWords: new Set(),
@@ -234,6 +242,8 @@ function resetRun() {
   game.wordStatus = "";
   game.wordCelebrationUntil = 0;
   game.wordsFoundThisLevel = [];
+  game.levelCompleteTimer = null;
+  game.levelCleared = false;
   game.paused = false;
   game.gameOver = false;
   populateInitialBlocks();
@@ -243,6 +253,8 @@ function resetRun() {
 function populateInitialBlocks() {
   game.grid = Array.from({ length: GRID_HEIGHT }, () => Array(GRID_WIDTH).fill(null));
   game.blocks = [];
+  game.levelCompleteTimer = null;
+  game.levelCleared = false;
   let placed = 0;
   for (let y = GRID_HEIGHT - 1; y >= 0 && placed < game.startingBlocks; y -= 1) {
     const cols = shuffle([...Array(GRID_WIDTH).keys()]);
@@ -377,10 +389,13 @@ function updateLooseBlockPhysics(block, dt) {
 function update(dt) {
   if (game.gameOver) return;
   applyGravity(dt);
-  updateTimer(dt);
-  updateSpecials(dt);
-  updateFloaters(dt);
+  updateBlockFlips(dt);
   checkLevelCompletion(dt);
+  if (!game.levelCleared) {
+    updateTimer(dt);
+    updateSpecials(dt);
+  }
+  updateFloaters(dt);
   updateHud();
   if (game.wordCelebrationUntil && performance.now() >= game.wordCelebrationUntil) {
     game.wordCelebrationUntil = 0;
@@ -414,7 +429,6 @@ function expireTimerNow() {
 
 function updateSpecials(dt) {
   for (const block of game.blocks) {
-    updateBlockFlip(block, dt);
     if (!block.special) continue;
     block.specialTimer -= dt;
     if (block.specialTimer <= 0) {
@@ -430,6 +444,10 @@ function updateSpecials(dt) {
     startSpecialFlip(block, Math.random() < 0.75 ? "double" : "triple");
   }
   game.specialBlockTimer = randomRange(5, 10);
+}
+
+function updateBlockFlips(dt) {
+  for (const block of game.blocks) updateBlockFlip(block, dt);
 }
 
 function updateFloaters(dt) {
@@ -459,7 +477,7 @@ function startSpecialFlip(block, nextSpecial) {
     switched: false
   };
   if (nextSpecial) {
-    block.specialTimer = 10;
+    block.specialTimer = SPECIAL_BLOCK_SECONDS;
     block.flash = Math.max(block.flash, 0.35);
   }
 }
@@ -600,13 +618,28 @@ function checkGameOver() {
 
 function checkLevelCompletion(dt) {
   const thresholdRow = GRID_HEIGHT - game.levelThreshold;
-  const complete = game.blocks.length > 0 && game.blocks.every((block) => block.y >= thresholdRow);
-  if (!complete) {
+  const clearOfWinArea = !game.blocks.some((block) => block.y < thresholdRow);
+  if (!clearOfWinArea && !game.levelCleared) {
     game.levelCompleteTimer = null;
     return;
   }
-  game.levelCompleteTimer = game.levelCompleteTimer === null ? 1 : game.levelCompleteTimer - dt;
+  game.levelCleared = true;
+  if (!isBoardSettled()) {
+    game.levelCompleteTimer = null;
+    return;
+  }
+  game.levelCompleteTimer = game.levelCompleteTimer === null ? 0.2 : game.levelCompleteTimer - dt;
   if (game.levelCompleteTimer <= 0) showLevelComplete();
+}
+
+function isBoardSettled() {
+  return game.blocks.every((block) =>
+    block.fallDelay <= 0
+    && !block.flip
+    && Math.abs(block.drawY - block.y) < SETTLE_DISTANCE_ROWS
+    && Math.abs(block.velocity) < 0.04
+    && Math.abs(block.squash) < 0.02
+  );
 }
 
 function levelThresholdFor(level) {
@@ -619,7 +652,7 @@ function secondsForLevel(level) {
 
 function pointerDown(event) {
   event.preventDefault();
-  if (game.paused || game.gameOver) return;
+  if (game.paused || game.gameOver || game.levelCleared) return;
   if (canvas.setPointerCapture) canvas.setPointerCapture(event.pointerId);
   const pos = pointerPosition(event);
   const block = getBlockAt(pos.x, pos.y);
@@ -632,9 +665,21 @@ function pointerDown(event) {
     if (game.tapSelecting) finishTapSelection();
     return;
   }
-  if (game.tapSelecting && block === game.selected.at(-1) && game.selected.length >= 3) {
-    finishTapSelection();
-    return;
+  if (game.tapSelecting) {
+    if (block === game.selected[0]) {
+      clearSelection();
+      return;
+    }
+    if (block === game.selected.at(-1) && game.selected.length >= 3) {
+      const now = performance.now();
+      if (game.tapSubmitBlock === block && now - game.tapSubmitAt < 450) {
+        finishTapSelection();
+      } else {
+        game.tapSubmitBlock = block;
+        game.tapSubmitAt = now;
+      }
+      return;
+    }
   }
   if (!game.tapSelecting) clearSelection();
   addBlockToSelection(block);
@@ -701,20 +746,26 @@ function addBlockToSelection(block) {
   if (!isNeighbor(last, block)) return;
   block.selected = true;
   game.selected.push(block);
+  if (game.tapSelecting) {
+    game.tapSubmitBlock = block;
+    game.tapSubmitAt = performance.now();
+  }
 }
 
 function finishTapSelection() {
   game.tapSelecting = false;
   game.pointerStart = null;
   game.pointerMoved = false;
+  game.tapSubmitBlock = null;
+  game.tapSubmitAt = 0;
   if (game.selected.length) submitSelection();
 }
 
 function pointerPosition(event) {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: ((event.clientX - rect.left) / rect.width) * CANVAS_WIDTH,
-    y: ((event.clientY - rect.top) / rect.height) * CANVAS_HEIGHT
+    x: ((event.clientX - rect.left) / rect.width) * CANVAS_WIDTH - CANVAS_GUTTER,
+    y: ((event.clientY - rect.top) / rect.height) * CANVAS_HEIGHT - CANVAS_GUTTER
   };
 }
 
@@ -814,12 +865,14 @@ function clearSelection() {
   game.tapSelecting = false;
   game.pointerStart = null;
   game.pointerMoved = false;
+  game.tapSubmitBlock = null;
+  game.tapSubmitAt = 0;
 }
 
 function updateCurrentWord() {
   const currentWord = $("currentWord");
   const word = game.selected.length
-    ? game.selected.map((block) => block.letter === STAR ? "★" : block.letter).join("")
+    ? game.selected.map((block) => block.letter === STAR ? WILDCARD_GLYPH : block.letter).join("")
     : game.word;
   const celebrate = !game.selected.length && game.definition && performance.now() < game.wordCelebrationUntil;
   currentWord.classList.toggle("celebrate-word", celebrate);
@@ -1015,19 +1068,28 @@ function drawGridLines() {
 
 function drawThreshold() {
   if (game.levelThreshold <= 0) return;
-  const y = (GRID_HEIGHT - game.levelThreshold) * CELL_SIZE;
-  roundRect(0, y, CANVAS_WIDTH, game.levelThreshold * CELL_SIZE, 14, "rgba(106,140,175,0.38)");
+  const y = CANVAS_GUTTER + (GRID_HEIGHT - game.levelThreshold) * CELL_SIZE;
+  roundRect(CANVAS_GUTTER, y, BOARD_WIDTH, game.levelThreshold * CELL_SIZE, 14, "rgba(106,140,175,0.38)");
 }
 
 function drawBlock(block) {
   const squash = Math.max(0, Math.min(1, block.squash || 0));
-  const wobble = Math.max(-0.11, Math.min(0.11, block.rotation || 0));
+  let wobble = Math.max(-0.11, Math.min(0.11, block.rotation || 0));
+  let rattleX = 0;
+  let rattleY = 0;
+  if (block.special && block.specialTimer > 0 && block.specialTimer <= 3 && !block.flip) {
+    const urgency = 1 - block.specialTimer / 3;
+    const phase = performance.now() / 42 + block.x * 1.9 + block.y * 0.7;
+    wobble += Math.sin(phase) * (0.018 + urgency * 0.018);
+    rattleX = Math.sin(phase * 1.4) * (0.5 + urgency * 1.1);
+    rattleY = Math.cos(phase * 1.7) * (0.25 + urgency * 0.45);
+  }
   const flipProgress = block.flip ? Math.min(1, block.flip.age / block.flip.duration) : 0;
   const flipScale = block.flip ? Math.max(0.08, Math.abs(Math.cos(flipProgress * Math.PI))) : 1;
   const squashX = squash * 4.5;
   const squashY = squash * 7;
-  const x = block.x * CELL_SIZE + 4 - squashX;
-  const y = block.drawY * CELL_SIZE + 4 + squashY;
+  const x = CANVAS_GUTTER + block.x * CELL_SIZE + 4 - squashX;
+  const y = CANVAS_GUTTER + block.drawY * CELL_SIZE + 4 + squashY;
   const size = CELL_SIZE - 8;
   const visualWidth = size + squashX * 2;
   const visualHeight = Math.max(size * 0.78, size - squashY * 1.35);
@@ -1035,6 +1097,7 @@ function drawBlock(block) {
   const centerY = y + visualHeight / 2;
 
   ctx.save();
+  ctx.translate(rattleX, rattleY);
   ctx.translate(centerX, centerY);
   ctx.rotate(wobble);
   ctx.scale(flipScale, 1);
@@ -1047,7 +1110,7 @@ function drawBlock(block) {
   ctx.shadowColor = "transparent";
   if (block.selected) {
     ctx.lineWidth = 5;
-    ctx.strokeStyle = PALETTE[5];
+    ctx.strokeStyle = selectedOutlineColor(block);
     strokeRoundRect(x + 2, y + 2, visualWidth - 4, visualHeight - 4, 8);
   }
   if (block.flash > 0) {
@@ -1059,8 +1122,12 @@ function drawBlock(block) {
   ctx.font = block.letter === STAR ? "34px FredokaLetris, sans-serif" : "30px FredokaLetris, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(block.letter === STAR ? "★" : block.letter, centerX, centerY + 1);
+  ctx.fillText(block.letter === STAR ? WILDCARD_GLYPH : block.letter, centerX, centerY + 1);
   ctx.restore();
+}
+
+function selectedOutlineColor(block) {
+  return block.color === TIMER_BLOCK_COLOR ? PALETTE[0] : PALETTE[5];
 }
 
 function drawSelectionLines() {
@@ -1069,7 +1136,7 @@ function drawSelectionLines() {
   ctx.beginPath();
   ctx.rect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   for (const block of game.selected) {
-    ctx.roundRect(block.x * CELL_SIZE + 6, block.drawY * CELL_SIZE + 6, CELL_SIZE - 12, CELL_SIZE - 12, 6);
+    ctx.roundRect(CANVAS_GUTTER + block.x * CELL_SIZE + 6, CANVAS_GUTTER + block.drawY * CELL_SIZE + 6, CELL_SIZE - 12, CELL_SIZE - 12, 6);
   }
   ctx.clip("evenodd");
   ctx.strokeStyle = PALETTE[5];
@@ -1078,8 +1145,8 @@ function drawSelectionLines() {
   ctx.lineJoin = "round";
   ctx.beginPath();
   game.selected.forEach((block, index) => {
-    const x = (block.x + 0.5) * CELL_SIZE;
-    const y = (block.drawY + 0.5) * CELL_SIZE;
+    const x = CANVAS_GUTTER + (block.x + 0.5) * CELL_SIZE;
+    const y = CANVAS_GUTTER + (block.drawY + 0.5) * CELL_SIZE;
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
@@ -1101,7 +1168,7 @@ function drawFloaters() {
       ctx.globalAlpha = alpha * (1 - particleProgress);
       ctx.fillStyle = particle.color;
       ctx.beginPath();
-      ctx.arc(particle.x, particle.y, particle.radius * (1 - particleProgress * 0.35), 0, Math.PI * 2);
+      ctx.arc(CANVAS_GUTTER + particle.x, CANVAS_GUTTER + particle.y, particle.radius * (1 - particleProgress * 0.35), 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -1109,13 +1176,13 @@ function drawFloaters() {
     ctx.strokeStyle = floater.color;
     ctx.lineWidth = 4 * (1 - progress);
     ctx.beginPath();
-    ctx.arc(floater.originX, floater.originY, 12 + progress * 38, 0, Math.PI * 2);
+    ctx.arc(CANVAS_GUTTER + floater.originX, CANVAS_GUTTER + floater.originY, 12 + progress * 38, 0, Math.PI * 2);
     ctx.stroke();
 
     ctx.globalAlpha = alpha;
     ctx.fillStyle = floater.color;
     ctx.save();
-    ctx.translate(floater.x, floater.y);
+    ctx.translate(CANVAS_GUTTER + floater.x, CANVAS_GUTTER + floater.y);
     ctx.rotate(Math.sin(floater.wobble) * 0.05);
     ctx.scale(pop, pop);
     ctx.shadowColor = "rgba(61,64,91,0.28)";
@@ -1179,7 +1246,9 @@ function updateHud() {
 }
 
 function fitHudText() {
-  for (const pill of document.querySelectorAll(".pill")) fitText(pill, 10, 16);
+  document.querySelectorAll(".pill, .timer-box").forEach((item) => {
+    item.style.fontSize = "";
+  });
 }
 
 function fitText(element, minPx, maxPx) {
@@ -1203,14 +1272,18 @@ function centerOfSelection() {
 }
 
 function addFloater(text, pos, color) {
+  const floaterPos = {
+    x: Math.max(34, Math.min(BOARD_WIDTH - 34, pos.x)),
+    y: Math.max(34, Math.min(BOARD_HEIGHT - 34, pos.y))
+  };
   const particles = [];
   const particleCount = Math.min(18, Math.max(8, String(text).length + 7));
   for (let i = 0; i < particleCount; i += 1) {
     const angle = (Math.PI * 2 * i) / particleCount + randomRange(-0.16, 0.16);
     const speed = randomRange(34, 92);
     particles.push({
-      x: pos.x,
-      y: pos.y,
+      x: floaterPos.x,
+      y: floaterPos.y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed - 38,
       age: 0,
@@ -1221,10 +1294,10 @@ function addFloater(text, pos, color) {
   }
   game.floaters.push({
     text,
-    originX: pos.x,
-    originY: pos.y,
-    x: pos.x,
-    y: pos.y,
+    originX: floaterPos.x,
+    originY: floaterPos.y,
+    x: floaterPos.x,
+    y: floaterPos.y,
     vx: randomRange(-8, 8),
     vy: -64,
     age: 0,
@@ -1239,17 +1312,87 @@ function addFloater(text, pos, color) {
 
 function showHowTo() {
   showModal("How To Play", `
-    <h3>Make Words</h3>
-    <p>Drag through neighboring blocks to make a word. Release to submit it. Words must be at least three letters long.</p>
-    <h3>Clear Levels</h3>
-    <p>Clear blocks until every remaining block is inside the shaded win area at the bottom of the board.</p>
-    <h3>Timer</h3>
-    <p>When the timer runs out, five new blocks fall in. The timer starts at 60 seconds and drops by 5 seconds every 10 levels.</p>
-    <h3>Scoring</h3>
-    <p>Rare letters, longer words, later levels, and bonus blocks are worth more points.</p>
-    <h3>Wild Cards</h3>
-    <p>Every 20 valid blocks cleared turns a random block into a wild card.</p>
+    <div class="howto-pages" data-page="0">
+      <div class="howto-viewport">
+        <div class="howto-track">
+          ${howToTextPage("Select Words", `
+            <p>Drag through neighboring blocks to make a word, then release to submit it. Words must be at least three letters long.</p>
+            <p>You can also tap a block to start selecting, tap neighboring blocks to build the word, and double-tap the last selected block to submit. Tap the first selected block again to deselect everything.</p>
+          `)}
+          ${howToTextPage("Clear Levels", `
+            <p>Clear blocks until every remaining block is inside the shaded win area at the bottom of the board.</p>
+          `)}
+          ${howToTextPage("Timer", `
+            <p>When the timer runs out, five new blocks fall in. The timer starts at 60 seconds and drops by 5 seconds every 10 levels.</p>
+            <p>You can tap the timer to force it to expire immediately.</p>
+          `)}
+          ${howToTextPage("Special Blocks", `
+            <p>Double and triple word blocks multiply the whole word score by 2x or 3x. When a special block is about to turn back into a regular block, it gently rattles.</p>
+          `)}
+          ${howToTextPage("Wild Cards", `
+            <p>Every 20 valid blocks cleared turns a random block into a wild card that can stand in for another letter.</p>
+          `)}
+        </div>
+      </div>
+      <div class="howto-controls">
+        <button class="howto-arrow" type="button" data-dir="-1" aria-label="Previous How To page">&lt;</button>
+        <div class="howto-dots" aria-label="How To pages"></div>
+        <button class="howto-arrow" type="button" data-dir="1" aria-label="Next How To page">&gt;</button>
+      </div>
+    </div>
   `);
+  initHowToPages();
+}
+
+function howToTextPage(title, copy) {
+  return `
+    <section class="howto-page">
+      <h3>${title}</h3>
+      ${copy}
+    </section>
+  `;
+}
+
+function initHowToPages() {
+  const root = modalBody.querySelector(".howto-pages");
+  if (!root) return;
+  const pages = [...root.querySelectorAll(".howto-page")];
+  const track = root.querySelector(".howto-track");
+  const dots = root.querySelector(".howto-dots");
+  let startX = null;
+  let startY = null;
+  dots.innerHTML = pages.map((_, index) => `<button type="button" aria-label="Show page ${index + 1}" data-page="${index}"></button>`).join("");
+  const setPage = (next) => {
+    const page = (next + pages.length) % pages.length;
+    root.dataset.page = page;
+    track.style.transform = `translateX(${-page * 100}%)`;
+    pages.forEach((item, index) => item.classList.toggle("active", index === page));
+    [...dots.children].forEach((dot, index) => dot.classList.toggle("active", index === page));
+  };
+  root.querySelectorAll("[data-dir]").forEach((button) => {
+    button.addEventListener("click", () => setPage(Number(root.dataset.page || 0) + Number(button.dataset.dir)));
+  });
+  dots.querySelectorAll("[data-page]").forEach((button) => {
+    button.addEventListener("click", () => setPage(Number(button.dataset.page || 0)));
+  });
+  root.addEventListener("pointerdown", (event) => {
+    startX = event.clientX;
+    startY = event.clientY;
+  });
+  root.addEventListener("pointerup", (event) => {
+    if (startX === null) return;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+    startX = null;
+    startY = null;
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    setPage(Number(root.dataset.page || 0) + (dx < 0 ? 1 : -1));
+  });
+  root.addEventListener("pointercancel", () => {
+    startX = null;
+    startY = null;
+  });
+  setPage(0);
 }
 
 function showScores() {

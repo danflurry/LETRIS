@@ -55,7 +55,7 @@ body.playing .shell {
   width: 100vw;
   height: var(--app-height);
   min-height: 0;
-  padding: max(3px, var(--safe-top)) max(5px, var(--safe-right)) max(3px, var(--safe-bottom)) max(5px, var(--safe-left));
+  padding: max(12px, var(--safe-top)) max(5px, var(--safe-right)) max(3px, var(--safe-bottom)) max(5px, var(--safe-left));
 }
 
 button,
@@ -218,6 +218,8 @@ button {
 
 .game-screen {
   --hud-height: 38px;
+  --hud-cell: clamp(34px, 10.8vw, 54px);
+  --hud-font: clamp(0.64rem, 2.25vw, 0.82rem);
   --board-width: min(calc(80vw - var(--safe-left) - var(--safe-right)), calc(100vw - 10px - var(--safe-left) - var(--safe-right)));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -226,8 +228,8 @@ button {
   align-items: center;
   gap: 6px;
   width: 100%;
-  height: calc(var(--app-height) - 6px - var(--safe-top) - var(--safe-bottom));
-  overflow: hidden;
+  height: calc(var(--app-height) - 15px - var(--safe-top) - var(--safe-bottom));
+  overflow: visible;
   position: relative;
 }
 
@@ -238,9 +240,11 @@ button {
 }
 
 .topbar {
-  width: min(100%, 540px);
+  width: max-content;
+  max-width: 100%;
   display: grid;
-  grid-template-columns: 38px 38px minmax(43px, 1fr) minmax(48px, 1fr) 42px 42px;
+  grid-template-columns: repeat(6, var(--hud-cell));
+  grid-auto-rows: var(--hud-cell);
   gap: 5px;
   align-items: center;
   padding: 6px;
@@ -254,18 +258,22 @@ button {
 .pill,
 .timer-box {
   min-width: 0;
-  min-height: 38px;
+  width: var(--hud-cell);
+  height: var(--hud-cell);
+  min-height: 0;
   border-radius: 8px;
   background: var(--gold);
   color: var(--ink);
   display: grid;
   place-items: center;
-  box-shadow: 0 5px 12px var(--shadow);
+  box-shadow: none;
   overflow: hidden;
 }
 
 .icon-button {
   background: var(--peach);
+  font-size: var(--hud-font);
+  line-height: 1;
 }
 
 .icon-button img {
@@ -274,11 +282,11 @@ button {
 }
 
 .pill {
-  padding: 0 5px;
+  padding: 0 3px;
   background: var(--ink);
   color: var(--paper);
   white-space: nowrap;
-  font-size: clamp(0.78rem, 3.1vw, 1rem);
+  font-size: var(--hud-font);
   line-height: 1;
   text-align: center;
   text-overflow: clip;
@@ -298,12 +306,12 @@ button {
 .score-pill {
   display: grid;
   align-content: center;
-  gap: 3px;
+  gap: 0;
 }
 
 .pill-label {
   display: block;
-  font-size: 0.72em;
+  font-size: 1em;
   line-height: 1;
 }
 
@@ -315,7 +323,7 @@ button {
 .timer-box {
   background: conic-gradient(var(--sage) 0deg, var(--gold) 0deg);
   border: 4px solid var(--paper);
-  font-size: clamp(0.78rem, 2.6vw, 1rem);
+  font-size: var(--hud-font);
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -326,16 +334,16 @@ button {
 
 #gameCanvas {
   grid-row: 2;
-  width: var(--board-width);
+  width: calc(var(--board-width) * 1.128571);
   height: auto;
   align-self: end;
-  aspect-ratio: 280 / 840;
+  aspect-ratio: 316 / 876;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  border-radius: 8px;
-  background: var(--peach);
+  border-radius: 0;
+  background: transparent;
 }
 
 .word-panel {
@@ -471,6 +479,71 @@ button {
   padding-left: 20px;
 }
 
+.howto-pages {
+  display: grid;
+  gap: 16px;
+  touch-action: pan-y;
+}
+
+.howto-viewport {
+  overflow: hidden;
+}
+
+.howto-track {
+  display: flex;
+  transition: transform 260ms ease;
+  will-change: transform;
+}
+
+.howto-page {
+  flex: 0 0 100%;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 190px;
+  padding: 0 2px;
+}
+
+.howto-page h3 {
+  margin-top: 0;
+}
+
+.howto-page:not(.active) {
+  pointer-events: none;
+}
+
+.howto-controls {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  gap: 10px;
+  align-items: center;
+}
+
+.howto-arrow {
+  min-height: 38px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.howto-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.howto-dots button {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(61, 64, 91, 0.28);
+}
+
+.howto-dots button.active {
+  background: var(--ink);
+}
+
 .modal-actions {
   display: flex;
   flex-wrap: wrap;
@@ -520,19 +593,24 @@ button {
   }
 
   .shell {
-    padding: max(7px, var(--safe-top)) max(7px, var(--safe-right)) max(7px, var(--safe-bottom)) max(7px, var(--safe-left));
+    padding: max(12px, var(--safe-top)) max(7px, var(--safe-right)) max(7px, var(--safe-bottom)) max(7px, var(--safe-left));
   }
 
   .topbar {
-    width: 100%;
-    grid-template-columns: 36px 36px minmax(40px, 1fr) minmax(45px, 1fr) 39px 39px;
+    width: max-content;
+    max-width: 100%;
+    grid-template-columns: repeat(6, var(--hud-cell));
+    grid-auto-rows: var(--hud-cell);
+    justify-content: center;
     gap: 4px;
   }
 
   .icon-button,
   .pill,
   .timer-box {
-    min-height: 36px;
+    width: var(--hud-cell);
+    height: var(--hud-cell);
+    min-height: 0;
   }
 
   .modal-card {
@@ -548,14 +626,10 @@ button {
     gap: 4px;
   }
 
-  .topbar {
-    grid-template-columns: 34px 34px minmax(38px, 1fr) minmax(42px, 1fr) 36px 36px;
-  }
-
   .icon-button,
   .pill,
   .timer-box {
-    min-height: 34px;
+    min-height: 0;
   }
 
   .word-panel {
@@ -576,13 +650,13 @@ button {
 
 @media (orientation: landscape) and (max-height: 500px) {
   body.playing .shell {
-    padding: max(3px, var(--safe-top)) max(8px, var(--safe-right)) max(3px, var(--safe-bottom)) max(8px, var(--safe-left));
+    padding: max(12px, var(--safe-top)) max(8px, var(--safe-right)) max(3px, var(--safe-bottom)) max(8px, var(--safe-left));
   }
 
   .game-screen {
     --board-width: min(calc((var(--app-height) - 58px - var(--safe-top) - var(--safe-bottom)) / 3), calc((100vw - 178px - var(--safe-left) - var(--safe-right)) / 1));
     grid-template-rows: auto minmax(0, 1fr);
-    height: calc(var(--app-height) - 6px - var(--safe-top) - var(--safe-bottom));
+    height: calc(var(--app-height) - 15px - var(--safe-top) - var(--safe-bottom));
     justify-content: center;
     align-content: center;
     column-gap: 10px;
@@ -591,9 +665,11 @@ button {
 
   .topbar {
     grid-row: 1;
-    width: 100%;
-    grid-template-columns: 38px 38px minmax(43px, 1fr) minmax(48px, 1fr) 42px 42px;
-    grid-auto-rows: 38px;
+    width: max-content;
+    max-width: 100%;
+    grid-template-columns: repeat(6, var(--hud-cell));
+    grid-auto-rows: var(--hud-cell);
+    justify-content: center;
   }
 
   #gameCanvas {
@@ -620,14 +696,14 @@ button {
 @media (min-width: 560px) and (min-height: 520px) {
   .game-screen {
     --hud-height: 54px;
-    --board-width: calc((var(--app-height) - 78px - var(--safe-top) - var(--safe-bottom)) / 3);
+    --board-width: calc((var(--app-height) - 92px - var(--safe-top) - var(--safe-bottom)) / 3.128571);
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
     justify-items: center;
     align-items: center;
     justify-content: center;
     gap: 12px;
-    height: calc(var(--app-height) - 8px - var(--safe-top) - var(--safe-bottom));
+    height: calc(var(--app-height) - 15px - var(--safe-top) - var(--safe-bottom));
   }
 
   .game-screen::before {
@@ -637,7 +713,7 @@ button {
   #gameCanvas {
     grid-column: 1;
     grid-row: 2;
-    width: var(--board-width);
+    width: calc(var(--board-width) * 1.128571);
     height: auto;
     align-self: end;
     justify-self: center;
@@ -670,9 +746,10 @@ button {
   .topbar {
     grid-column: 1;
     grid-row: 1;
-    width: min(100%, 540px);
-    grid-template-columns: 54px 54px minmax(62px, 1fr) minmax(72px, 1fr) 68px 54px;
-    grid-auto-rows: 54px;
+    width: max-content;
+    max-width: 100%;
+    grid-template-columns: repeat(6, var(--hud-cell));
+    grid-auto-rows: var(--hud-cell);
     gap: 8px;
     align-self: start;
     justify-self: center;
@@ -681,18 +758,20 @@ button {
 
   .topbar .timer-box {
     position: static;
-    width: 100%;
-    min-height: 54px;
+    width: var(--hud-cell);
+    height: var(--hud-cell);
+    min-height: 0;
   }
 
   .icon-button,
   .pill,
   .timer-box {
-    min-height: 54px;
-    width: 100%;
+    min-height: 0;
+    width: var(--hud-cell);
+    height: var(--hud-cell);
   }
 
   .pill {
-    font-size: clamp(0.9rem, 1.35vw, 1.05rem);
+    font-size: var(--hud-font);
   }
 }
